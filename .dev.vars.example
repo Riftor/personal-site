@@ -1,0 +1,17 @@
+# Template for .dev.vars, which is gitignored. Copy it and fill in real values locally.
+# In production these are Wrangler secrets (`wrangler secret put <NAME>`), never in wrangler.toml.
+# Placeholders only in this file — never commit a real credential.
+
+# Visitor sign-in: Google OAuth 2.0 Web Client. Scopes are openid/email/profile ONLY.
+GOOGLE_CLIENT_ID="replace-me.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="replace-me"
+
+# Better Auth
+BETTER_AUTH_SECRET="replace-me-with-32-random-bytes"
+BETTER_AUTH_URL="http://localhost:5173"
+
+# Caden's calendar: a service account with the calendar shared to it read-only.
+# Entirely separate from the visitor credential above — see plan §2 and §4.
+GOOGLE_SA_EMAIL="replace-me@replace-me.iam.gserviceaccount.com"
+GOOGLE_SA_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-me\n-----END PRIVATE KEY-----\n"
+CALENDAR_ID="replace-me@gmail.com"

@@ -1,0 +1,26 @@
+name = "personal-site"
+main = ".svelte-kit/cloudflare/_worker.js"
+# Newest date the bundled workerd supports; bump it alongside wrangler, not ahead of it.
+compatibility_date = "2026-08-08"
+compatibility_flags = ["nodejs_als"]
+workers_dev = true
+preview_urls = true
+
+[assets]
+binding = "ASSETS"
+directory = ".svelte-kit/cloudflare"
+
+# D1. `database_id` is a placeholder until a real Cloudflare account exists —
+# local dev (`wrangler dev`, `wrangler d1 execute --local`) keys off `database_name`
+# and never reads it. Replace it before the first `--remote` command.
+[[d1_databases]]
+binding = "DB"
+database_name = "personal-site"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "drizzle"
+
+# R2. The local bucket is simulated by wrangler; the remote one is not created yet.
+# It must never get an r2.dev public URL or a custom domain — see plan §5.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "personal-site-media"

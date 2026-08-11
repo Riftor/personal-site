@@ -18,8 +18,16 @@
 
 	// Where sign-in should return to, and where sign-out should leave you.
 	// Never `/signin` itself, which would bounce a fresh session straight back
-	// to the page it just came from.
-	const next = $derived(current === resolve('/signin') ? '/' : current + page.url.search);
+	// to the page it just came from, and never a private path — `/signout`
+	// refuses to send you back to one anyway (it would need the session it just
+	// destroyed), and echoing the path here would make the masthead the one
+	// part of a refusal page that differs between a private URL that exists and
+	// one that does not.
+	const next = $derived(
+		current.startsWith('/private') || current === resolve('/signin')
+			? '/'
+			: current + page.url.search
+	);
 </script>
 
 <svelte:head>
@@ -37,6 +45,22 @@
 					{#each nav as item (item.href)}
 						<li>
 							<a href={item.href} aria-current={current === item.href ? 'page' : undefined}>
+								{item.label}
+							</a>
+						</li>
+					{/each}
+
+					<!-- Links to the private half, for tiers that clear it. This is
+					     signposting, not access control: every page below refuses
+					     the request in its own loader, and typing the URL without
+					     the link gets you exactly as far. -->
+					{#each data.privateNav as item (item.href)}
+						<li>
+							<a
+								class="nav__private"
+								href={item.href}
+								aria-current={current === item.href ? 'page' : undefined}
+							>
 								{item.label}
 							</a>
 						</li>
@@ -131,6 +155,12 @@
 	.nav a[aria-current='page'] {
 		border-block-end-color: var(--color-accent);
 		color: var(--color-ink);
+	}
+
+	/* Marks the private half apart from the portfolio so it is obvious which
+	   links a signed-out visitor is not seeing. */
+	.nav__private {
+		color: var(--color-accent);
 	}
 
 	.viewer {

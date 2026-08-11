@@ -30,3 +30,6 @@ vite.config.ts.timestamp-*
 # Playwright
 test-results
 playwright-report
+
+# Local e2e session fixtures, written by scripts/seed-e2e-access.mjs.
+e2e/.access-fixtures.json

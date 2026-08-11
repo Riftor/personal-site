@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "wrangler types && vite build",
+		"build": "node scripts/assert-no-private-prerender.mjs --source && wrangler types && vite build && node scripts/assert-no-private-prerender.mjs --output",
 		"preview": "wrangler dev .svelte-kit/cloudflare/_worker.js --port 4173",
 		"prepare": "svelte-kit sync && wrangler types || echo ''",
 		"check": "wrangler types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -21,7 +21,11 @@
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
 		"db:studio": "drizzle-kit studio",
-		"db:apply": "wrangler d1 migrations apply personal-site --local"
+		"db:apply": "wrangler d1 migrations apply personal-site --local",
+		"access:grant": "node scripts/access.mjs grant",
+		"access:revoke": "node scripts/access.mjs revoke",
+		"access:list": "node scripts/access.mjs list",
+		"test:seed": "node scripts/seed-e2e-access.mjs"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

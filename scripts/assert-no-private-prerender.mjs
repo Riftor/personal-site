@@ -60,17 +60,46 @@ function* walk(dir) {
 }
 
 /**
- * Matches `export const prerender = <value>` and `export const ssr = <value>`.
+ * Matches `export <const|let|var> prerender = <value>` and the same for `ssr`.
  * Comments are stripped first so the prose in `+layout.server.ts` — which
  * necessarily talks about `prerender = true` — is not read as code.
+ *
+ * `let` and `var` are matched as well as `const`. SvelteKit honours the export
+ * whatever the declaration keyword, so a `const`-only pattern would read
+ * `export let prerender = true` as absent and pass a prerendering private
+ * route. That gap was found in review on 2026-08-10; do not narrow this back.
+ *
+ * Also returns `opaque`: exports of these names this script cannot statically
+ * evaluate — a re-export, or a binding assigned from a variable. Those fail the
+ * build rather than being ignored, because "cannot tell" must not mean "fine"
+ * for the one control standing between a private page and the public internet.
  */
 function exportedFlags(source) {
 	const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 	const flags = {};
-	for (const match of code.matchAll(/export\s+const\s+(prerender|ssr)\s*=\s*([^;\n]+)/g)) {
+	const opaque = [];
+
+	for (const match of code.matchAll(
+		/export\s+(?:const|let|var)\s+(prerender|ssr)\s*=\s*([^;\n]+)/g
+	)) {
 		flags[match[1]] = match[2].trim();
 	}
-	return flags;
+
+	// `export { prerender }`, `export { x as prerender } from './y'`
+	for (const match of code.matchAll(/export\s*\{([^}]*)\}(\s*from\s*['"][^'"]+['"])?/g)) {
+		for (const clause of match[1].split(',')) {
+			const exported = clause
+				.split(/\s+as\s+/)
+				.pop()
+				?.trim();
+			if (exported === 'prerender' || exported === 'ssr') opaque.push(exported);
+		}
+	}
+
+	// `export * from './options'` — could re-export either flag; unknowable here.
+	if (/export\s*\*\s*from/.test(code)) opaque.push('*');
+
+	return { flags, opaque };
 }
 
 function checkSource() {
@@ -79,7 +108,16 @@ function checkSource() {
 	for (const path of walk(PRIVATE_ROUTES_DIR)) {
 		if (!/\.(ts|js)$/.test(path)) continue;
 
-		const flags = exportedFlags(readFileSync(path, 'utf8'));
+		const { flags, opaque } = exportedFlags(readFileSync(path, 'utf8'));
+
+		for (const name of opaque) {
+			fail(
+				path,
+				name === '*'
+					? 'uses `export * from`, which could re-export prerender or ssr; declare them inline instead.'
+					: `re-exports \`${name}\` indirectly, so its value cannot be checked here; declare it inline instead.`
+			);
+		}
 
 		if (flags.prerender !== undefined && flags.prerender !== 'false') {
 			fail(path, `exports prerender = ${flags.prerender}; a private route must never prerender.`);

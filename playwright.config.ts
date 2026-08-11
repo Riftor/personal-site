@@ -10,6 +10,16 @@ export default defineConfig({
 	// while `wrangler dev` holds the same SQLite file open is asking for a flaky
 	// suite. Sequencing it here means the rows are in place before the Worker
 	// has started, with no contention at all.
-	webServer: { command: 'npm run build && npm run test:seed && npm run preview', port: 4173 },
+	//
+	// `test:seed:media` transcodes the fixtures and uploads them to local R2
+	// through the real publish CLI. That is slow the first time — a cold run
+	// is a minute of ffmpeg and one `wrangler r2 object put` per object — and
+	// close to nothing afterwards, because the publisher skips anything whose
+	// content hash has not moved. The timeout is sized for the cold case.
+	webServer: {
+		command: 'npm run build && npm run test:seed && npm run test:seed:media && npm run preview',
+		port: 4173,
+		timeout: 300_000
+	},
 	use: { baseURL: 'http://localhost:4173' }
 });

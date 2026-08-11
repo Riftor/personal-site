@@ -1,6 +1,6 @@
 import { isHttpError, isRedirect, type RequestEvent } from '@sveltejs/kit';
 import { describe, expect, it } from 'vitest';
-import { NO_ACCESS, requireTier } from './guard';
+import { accessDecisionFor, NO_ACCESS, requireTier } from './guard';
 import { TIER_RANK } from './tiers';
 import { ANONYMOUS_VIEWER, type Viewer } from './viewer';
 
@@ -94,5 +94,50 @@ describe('requireTier', () => {
 		const refusal = refusalFrom(eventFor(viewerAt(TIER_RANK.owner)), 'familly' as never);
 
 		expect(refusal).toMatchObject({ status: 403 });
+	});
+});
+
+/**
+ * The comparison underneath both `requireTier` and `/m/[assetId]/[variant]`.
+ * The media route needs the three answers kept apart — it turns
+ * `unauthenticated` into 401 rather than a redirect — so they are tested here
+ * rather than only through the page guard's redirect/403 translation.
+ */
+describe('accessDecisionFor', () => {
+	it('allows a viewer at or above the required rank', () => {
+		expect(accessDecisionFor(viewerAt(TIER_RANK.family), TIER_RANK.family)).toBe('allow');
+		expect(accessDecisionFor(viewerAt(TIER_RANK.owner), TIER_RANK.family)).toBe('allow');
+	});
+
+	it('lets a stranger read something genuinely public', () => {
+		expect(accessDecisionFor(ANONYMOUS_VIEWER, TIER_RANK.public)).toBe('allow');
+	});
+
+	it('separates "no session" from "not enough tier"', () => {
+		expect(accessDecisionFor(ANONYMOUS_VIEWER, TIER_RANK.family)).toBe('unauthenticated');
+		expect(accessDecisionFor(viewerAt(TIER_RANK.friend), TIER_RANK.family)).toBe('forbidden');
+	});
+
+	it('refuses a required rank that is not a number, whoever is asking', () => {
+		for (const required of [Number.NaN, Number.POSITIVE_INFINITY]) {
+			expect(accessDecisionFor(viewerAt(TIER_RANK.owner), required), String(required)).toBe(
+				'forbidden'
+			);
+		}
+	});
+
+	it('does not send a stranger to sign in for something nobody can read', () => {
+		// An unknown asset id resolves to `Infinity`, and a signed-out request
+		// for one must look exactly like a signed-out request for a real
+		// private asset: 401, not a redirect and not a 404.
+		expect(accessDecisionFor(ANONYMOUS_VIEWER, Number.POSITIVE_INFINITY)).toBe('unauthenticated');
+	});
+
+	it('refuses when the hook did not run at all', () => {
+		expect(accessDecisionFor(undefined, TIER_RANK.public)).toBe('forbidden');
+	});
+
+	it('refuses a viewer whose own rank is not a number', () => {
+		expect(accessDecisionFor(viewerAt(Number.NaN), TIER_RANK.friend)).toBe('forbidden');
 	});
 });

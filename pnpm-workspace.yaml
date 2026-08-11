@@ -1,6 +1,12 @@
 allowBuilds:
   workerd: true
   esbuild: true
+  # `ffmpeg-static` has no binary in the tarball; its install script fetches the
+  # matching prebuilt from the project's GitHub release. There is no system
+  # ffmpeg on this machine and none can be installed, so this script is how the
+  # media pipeline gets a transcoder at all (plan §5). `ffprobe-static` needs no
+  # entry — it ships its binaries inside the package.
+  ffmpeg-static: true
 
 # better-auth hard-depends on its Prisma, Kysely and Mongo adapters, each of
 # which declares the corresponding driver as an optional peer. With pnpm's

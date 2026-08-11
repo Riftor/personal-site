@@ -1,4 +1,4 @@
-import { check, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { check, index, integer, real, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
 import { desc, sql } from 'drizzle-orm';
 
 /**
@@ -142,9 +142,11 @@ export const contentEntry = sqliteTable(
 		minTierRank: integer('min_tier_rank').notNull().default(OWNER_TIER_RANK),
 		status: text('status', { enum: CONTENT_STATUSES }).notNull().default('draft'),
 		/**
-		 * References `media_asset(id)`; that table and the foreign key land with
-		 * the media pipeline in M4. The column exists now so the publish CLI's
-		 * row shape does not change under it.
+		 * References `media_asset(id)` logically, but with no SQL foreign key.
+		 * SQLite cannot add one to an existing table without rebuilding it, and
+		 * rebuilding the table that holds every published page to gain a
+		 * constraint on a nullable column is a poor trade. The publish CLI is
+		 * the only writer and sets this from an asset it has just upserted.
 		 */
 		coverAssetId: text('cover_asset_id'),
 		/** ISO date the entry is *about*, not when it was written. */
@@ -165,3 +167,110 @@ export const contentEntry = sqliteTable(
 );
 
 export type ContentEntry = typeof contentEntry.$inferSelect;
+
+/* ------------------------------------------------------------------------ *
+ * Media (plan §3 and §5)
+ * ------------------------------------------------------------------------ */
+
+export const MEDIA_KINDS = ['image', 'video'] as const;
+export type MediaKind = (typeof MEDIA_KINDS)[number];
+
+/**
+ * The derivative sizes `scripts/media/` emits for a still image: AVIF and WebP
+ * at three widths, exactly as plan §5 specifies.
+ */
+export const IMAGE_VARIANTS = [
+	'w400.avif',
+	'w400.webp',
+	'w800.avif',
+	'w800.webp',
+	'w1600.avif',
+	'w1600.webp'
+] as const;
+
+/** H.264/AAC MP4 at two heights plus the JPEG poster frame. */
+export const VIDEO_VARIANTS = ['poster.jpg', '720.mp4', '1080.mp4'] as const;
+
+/**
+ * Every variant name `/m/[assetId]/[variant]` will answer for, and the
+ * allowlist that name is checked against before any key is looked up.
+ *
+ * Two absences are deliberate. `original` is not here, so there is no URL
+ * shape at all that serves the untouched source — an original stays in R2 as
+ * an archive and is unreachable through the Worker. And the names carry their
+ * own extension (`720.mp4`, not `mp4-720`) so a variant string never has to be
+ * translated into a key by string surgery: the key comes out of
+ * `media_variant.r2_key`, and this list only decides whether to run the query.
+ */
+export const MEDIA_VARIANTS = [...IMAGE_VARIANTS, ...VIDEO_VARIANTS] as const;
+export type MediaVariantName = (typeof MEDIA_VARIANTS)[number];
+
+/**
+ * One published source file. `id` is the opaque handle in the URL, so nothing
+ * about the filename, the folder it came from, or the order it was published
+ * in is derivable from it.
+ *
+ * `min_tier_rank` is denormalized off the parent entry (plan §3) so one photo
+ * in an otherwise family-visible set can be stricter than the set. It is a
+ * floor, not the whole answer: `findServableVariant` takes the stricter of
+ * this and the entry's own rank, so loosening this column alone cannot publish
+ * an asset past its page.
+ */
+export const mediaAsset = sqliteTable(
+	'media_asset',
+	{
+		/** 26-char Crockford base32, ULID-shaped. Public-facing and opaque. */
+		id: text('id').primaryKey(),
+		entryId: text('entry_id').references(() => contentEntry.id, { onDelete: 'cascade' }),
+		kind: text('kind', { enum: MEDIA_KINDS }).notNull(),
+		/** R2 key of the metadata-stripped source. Archived, never served. */
+		originalKey: text('original_key').notNull().unique(),
+		mime: text('mime').notNull(),
+		bytes: integer('bytes').notNull(),
+		width: integer('width'),
+		height: integer('height'),
+		/** Video only. */
+		durationS: real('duration_s'),
+		/** Tiny LQIP string. Safe to inline in HTML — it is 20-odd bytes of blur. */
+		blurhash: text('blurhash'),
+		caption: text('caption'),
+		takenAt: integer('taken_at'),
+		/** DEFAULT DENY, same rule as `content_entry`. */
+		minTierRank: integer('min_tier_rank').notNull().default(OWNER_TIER_RANK),
+		position: integer('position').notNull().default(0),
+		/** sha256 of the source bytes. What makes re-publishing a no-op. */
+		contentHash: text('content_hash').notNull(),
+		createdAt: integer('created_at').notNull()
+	},
+	(t) => [
+		check('media_asset_kind_check', sql`${t.kind} in ('image', 'video')`),
+		index('idx_asset_entry').on(t.entryId, t.position)
+	]
+);
+
+export type MediaAsset = typeof mediaAsset.$inferSelect;
+
+/**
+ * One derivative object in R2. The `(asset_id, variant)` uniqueness is what
+ * lets the media route resolve a key with a single indexed read, and the
+ * uniqueness on `r2_key` is what stops two assets from being wired to the same
+ * object — which would let the looser of the two ranks serve both.
+ */
+export const mediaVariant = sqliteTable(
+	'media_variant',
+	{
+		id: text('id').primaryKey(),
+		assetId: text('asset_id')
+			.notNull()
+			.references(() => mediaAsset.id, { onDelete: 'cascade' }),
+		variant: text('variant', { enum: MEDIA_VARIANTS }).notNull(),
+		r2Key: text('r2_key').notNull().unique(),
+		mime: text('mime').notNull(),
+		bytes: integer('bytes').notNull(),
+		width: integer('width'),
+		height: integer('height')
+	},
+	(t) => [unique('media_variant_asset_variant').on(t.assetId, t.variant)]
+);
+
+export type MediaVariant = typeof mediaVariant.$inferSelect;

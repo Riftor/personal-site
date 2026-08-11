@@ -1,6 +1,6 @@
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 import { SIGNIN_PATH } from '../auth';
-import type { TierSlug } from '../db/schema';
+import { PUBLIC_TIER_RANK, type TierSlug } from '../db/schema';
 import { rankRequiredFor } from './tiers';
 import type { Viewer } from './viewer';
 
@@ -26,6 +26,41 @@ export function signinRedirectTarget(url: URL): string {
 }
 
 /**
+ * The three answers this codebase gives to "may this viewer read this?".
+ *
+ * `unauthenticated` and `forbidden` are kept apart all the way down because
+ * the two callers turn them into different things: a page redirects the first
+ * to `/signin` and 403s the second, while a media subresource answers 401 and
+ * 403 respectively — an `<img>` cannot follow a login flow, so redirecting it
+ * would show a broken image where a diagnosable status belongs.
+ */
+export type AccessDecision = 'allow' | 'unauthenticated' | 'forbidden';
+
+/**
+ * The comparison. Every access decision in the system — pages via
+ * `requireTier`, media bytes via `/m/[assetId]/[variant]` — comes out of this
+ * one function, so there is exactly one place where "may read" is defined and
+ * no second, subtly different copy of it to drift.
+ *
+ * Every branch is written so that an unexpected value refuses:
+ *   - no viewer at all means `handle` did not run. That is a broken
+ *     deployment, not an anonymous visitor, and signing in would not fix it.
+ *   - `requiredRank` is compared with a failed `<=` / `>=` rather than `<`,
+ *     so `NaN` — which compares false against everything — refuses. Callers
+ *     pass `Infinity` for "this should not have been reachable".
+ *   - only a rank of exactly `PUBLIC_TIER_RANK` is readable without a session.
+ */
+export function accessDecisionFor(
+	viewer: Viewer | undefined,
+	requiredRank: number
+): AccessDecision {
+	if (!viewer) return 'forbidden';
+	if (!viewer.signedIn && !(requiredRank <= PUBLIC_TIER_RANK)) return 'unauthenticated';
+	if (!(viewer.rank >= requiredRank)) return 'forbidden';
+	return 'allow';
+}
+
+/**
  * Refuses the request unless the viewer holds at least `minTierSlug`.
  *
  * Signed out and signed-in-but-unauthorized are deliberately different
@@ -36,24 +71,13 @@ export function signinRedirectTarget(url: URL): string {
  */
 export function requireTier(event: RequestEvent, minTierSlug: TierSlug): Viewer {
 	const viewer = event.locals.viewer;
-	const required = rankRequiredFor(minTierSlug);
 
-	// `handle` sets this on every request, so a missing viewer means the hook
-	// did not run — a broken deployment, not an anonymous visitor. Refuse
-	// rather than guess, and do not send them to `/signin`: signing in would
-	// not fix it and the loop would hide the fault.
-	if (!viewer) {
-		error(403, { code: NO_ACCESS, message: 'No access.', email: null });
-	}
-
-	if (!viewer.signedIn) {
-		redirect(302, signinRedirectTarget(event.url));
-	}
-
-	// Written as a failed `>=` rather than `<` so a NaN rank — which compares
-	// false against everything — refuses instead of passing.
-	if (!(viewer.rank >= required)) {
-		error(403, { code: NO_ACCESS, message: 'No access.', email: viewer.email });
+	switch (accessDecisionFor(viewer, rankRequiredFor(minTierSlug))) {
+		case 'unauthenticated':
+			redirect(302, signinRedirectTarget(event.url));
+			break;
+		case 'forbidden':
+			error(403, { code: NO_ACCESS, message: 'No access.', email: viewer?.email ?? null });
 	}
 
 	return viewer;

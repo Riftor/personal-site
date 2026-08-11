@@ -12,8 +12,10 @@
  * Two passes, because they catch it at different moments:
  *
  *   --source   before the build. Reads every route module under
- *              `src/routes/(private)/` and rejects any `prerender` export that
- *              is not `false`, or any `ssr` export that is not `true`. Fast,
+ *              `src/routes/(private)/` and `src/routes/m/` — the pages and the
+ *              byte path, the two halves of the site that must never be a
+ *              static file — and rejects any `prerender` export that is not
+ *              `false`, or any `ssr` export that is not `true`. Fast,
  *              deterministic, and it names the offending line.
  *
  *   --output   after the build. Rejects any `.html` in the build output at
@@ -33,6 +35,14 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PRIVATE_ROUTES_DIR = join(REPO_ROOT, 'src', 'routes', '(private)');
+/**
+ * `src/routes/m/` is the media byte path. It is not under `(private)` — a
+ * subresource must answer 401, not redirect to `/signin` (plan §5) — but a
+ * prerendered `/m/...` would be exactly the same catastrophe: R2 bytes handed
+ * out of the asset store with no tier check in front of them.
+ */
+const MEDIA_ROUTES_DIR = join(REPO_ROOT, 'src', 'routes', 'm');
+const GUARDED_ROUTE_DIRS = [PRIVATE_ROUTES_DIR, MEDIA_ROUTES_DIR];
 const DEFAULT_OUTPUT_DIRS = [
 	join(REPO_ROOT, '.svelte-kit', 'cloudflare'),
 	// SvelteKit writes prerendered pages here before the adapter copies them.
@@ -104,8 +114,9 @@ function exportedFlags(source) {
 
 function checkSource() {
 	let sawLayoutOptions = false;
+	let sawMediaPrerenderFalse = false;
 
-	for (const path of walk(PRIVATE_ROUTES_DIR)) {
+	for (const path of GUARDED_ROUTE_DIRS.flatMap((dir) => [...walk(dir)])) {
 		if (!/\.(ts|js)$/.test(path)) continue;
 
 		const { flags, opaque } = exportedFlags(readFileSync(path, 'utf8'));
@@ -128,12 +139,22 @@ function checkSource() {
 		if (path.endsWith(join('(private)', '+layout.server.ts'))) {
 			sawLayoutOptions = flags.prerender === 'false' && flags.ssr === 'true';
 		}
+		if (path.endsWith(join('[assetId]', '[variant]', '+server.ts'))) {
+			sawMediaPrerenderFalse = flags.prerender === 'false';
+		}
 	}
 
 	if (!sawLayoutOptions) {
 		fail(
 			join(PRIVATE_ROUTES_DIR, '+layout.server.ts'),
 			'must export both `prerender = false` and `ssr = true`; every private route inherits them.'
+		);
+	}
+
+	if (!sawMediaPrerenderFalse) {
+		fail(
+			join(MEDIA_ROUTES_DIR, '[assetId]', '[variant]', '+server.ts'),
+			'must export `prerender = false`; the media route is the only way R2 bytes leave the bucket.'
 		);
 	}
 }
@@ -154,6 +175,11 @@ function checkOutput(dirs) {
 
 			if (rel.toLowerCase().includes('private')) {
 				fail(path, 'a build artefact under a "private" path is served before the Worker runs.');
+			}
+			// A prerendered `+server.ts` writes the raw body, not an `.html`,
+			// so the extension check below would miss `m/<id>/720.mp4`.
+			if (/^m[/\\]/i.test(rel)) {
+				fail(path, 'a build artefact under /m/ would serve R2 bytes with no tier check.');
 			}
 			if (/\.html$/i.test(rel)) {
 				fail(path, 'prerendered HTML in the build output. Nothing in this project may prerender.');

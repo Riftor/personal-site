@@ -1,20 +1,22 @@
 import { requireTier } from '$lib/server/access/guard';
+import { listPhotoSets } from '$lib/server/media/gallery';
 import type { PageServerLoad } from './$types';
 
 /**
- * Stub for M3. Real photo sets — R2 objects behind `/m/[assetId]/[variant]`,
- * each re-checking its own `min_tier_rank` on every byte fetched — land in M4.
- * As with `/private/now`, the guard is the first statement and the placeholder
- * copy lives in the loader so it never reaches the client bundle.
+ * The gallery (M4.4). `requireTier` is the first statement, as it is in every
+ * loader under `(private)/`, and the rank it returns is then passed down into
+ * the query — so the page cannot list a set or a photo above the viewer's
+ * tier even by accident.
+ *
+ * Nothing here mints a URL that grants anything. `/m/[assetId]/[variant]` is
+ * an ordinary path; what makes it readable is the session cookie the browser
+ * already has, re-checked against the asset on every fetch.
  */
-export const load: PageServerLoad = (event) => {
+export const load: PageServerLoad = async (event) => {
 	const viewer = requireTier(event, 'family');
 
 	return {
 		viewer: { email: viewer.email, tierSlug: viewer.tierSlug },
-		sets: [
-			{ title: '[PLACEHOLDER] Cornwall, July 2026', count: 24 },
-			{ title: '[PLACEHOLDER] Family dinner, June 2026', count: 11 }
-		]
+		sets: await listPhotoSets(event.platform, viewer.rank)
 	};
 };

@@ -33,3 +33,5 @@ playwright-report
 
 # Local e2e session fixtures, written by scripts/seed-e2e-access.mjs.
 e2e/.access-fixtures.json
+# Local e2e media ids, written by scripts/seed-e2e-media.mjs.
+e2e/.media-fixtures.json

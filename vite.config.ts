@@ -41,7 +41,11 @@ export default defineConfig({
 				test: {
 					name: 'server',
 					environment: 'node',
-					include: ['src/**/*.{test,spec}.{js,ts}'],
+					// `scripts/` is in here because the media pipeline lives
+					// there: the EXIF-stripping proof in `derive.spec.mjs` is
+					// a privacy control (plan §8), not a build helper, and it
+					// belongs in the suite that has to stay green.
+					include: ['src/**/*.{test,spec}.{js,ts}', 'scripts/**/*.{test,spec}.{js,mjs,ts}'],
 					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
 				}
 			}

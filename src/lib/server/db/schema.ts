@@ -1,6 +1,13 @@
 import { check, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { desc, sql } from 'drizzle-orm';
 
+/**
+ * Better Auth's own `user` / `session` / `account` / `verification` tables.
+ * Re-exported rather than redefined so drizzle-kit sees one schema module and
+ * the Better Auth adapter and the app read the same table objects.
+ */
+export * from './auth-schema';
+
 /** How much of Caden's calendar a tier is allowed to see. See plan §4. */
 export const CALENDAR_DETAILS = ['none', 'busy', 'titles', 'full'] as const;
 export type CalendarDetail = (typeof CALENDAR_DETAILS)[number];

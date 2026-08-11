@@ -1,3 +1,11 @@
 allowBuilds:
   workerd: true
   esbuild: true
+
+# better-auth hard-depends on its Prisma, Kysely and Mongo adapters, each of
+# which declares the corresponding driver as an optional peer. With pnpm's
+# default peer auto-install that drags @prisma/client and better-sqlite3 —
+# a native module — into the tree for adapters this project never loads; it
+# uses the Drizzle/D1 one. Every dependency here is declared deliberately
+# (plan §1, dependency budget), so peers are not installed behind our back.
+autoInstallPeers: false

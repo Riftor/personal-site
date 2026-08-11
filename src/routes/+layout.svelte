@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 
-	let { children } = $props();
+	let { children, data } = $props();
 
 	const nav = [
 		{ href: resolve('/'), label: 'Home' },
@@ -15,6 +15,11 @@
 	// Trailing slashes are normalised away by SvelteKit, so an exact match is enough.
 	const current = $derived(page.url.pathname);
 	const year = new Date().getFullYear();
+
+	// Where sign-in should return to, and where sign-out should leave you.
+	// Never `/signin` itself, which would bounce a fresh session straight back
+	// to the page it just came from.
+	const next = $derived(current === resolve('/signin') ? '/' : current + page.url.search);
 </script>
 
 <svelte:head>
@@ -38,6 +43,21 @@
 					{/each}
 				</ul>
 			</nav>
+
+			<!-- Identity only. Showing an email here says who Google says you
+			     are; it says nothing about what you may read. -->
+			<div class="viewer">
+				{#if data.viewerEmail}
+					<span class="viewer__email" title={data.viewerEmail}>{data.viewerEmail}</span>
+					<form method="POST" action="/signout?next={encodeURIComponent(next)}">
+						<button class="viewer__button" type="submit">Sign out</button>
+					</form>
+				{:else}
+					<a class="viewer__link" href="{resolve('/signin')}?next={encodeURIComponent(next)}">
+						Sign in
+					</a>
+				{/if}
+			</div>
 		</div>
 	</header>
 
@@ -111,6 +131,48 @@
 	.nav a[aria-current='page'] {
 		border-block-end-color: var(--color-accent);
 		color: var(--color-ink);
+	}
+
+	.viewer {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-sm);
+		min-width: 0;
+		font-size: var(--text-sm);
+	}
+
+	/* A long address must truncate rather than push the nav off a phone. */
+	.viewer__email {
+		overflow: hidden;
+		color: var(--color-ink-faint);
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.viewer__link {
+		color: var(--color-ink-muted);
+		text-decoration: none;
+	}
+
+	.viewer__link:hover {
+		color: var(--color-ink);
+		text-decoration: underline;
+	}
+
+	/* Sign-out has to be a form button so it can POST; it is styled to read as
+	   the link it sits next to rather than as a call to action. */
+	.viewer__button {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--color-ink-muted);
+		font-size: inherit;
+		cursor: pointer;
+	}
+
+	.viewer__button:hover {
+		color: var(--color-ink);
+		text-decoration: underline;
 	}
 
 	.colophon {

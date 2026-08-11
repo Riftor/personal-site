@@ -2,7 +2,11 @@ name = "personal-site"
 main = ".svelte-kit/cloudflare/_worker.js"
 # Newest date the bundled workerd supports; bump it alongside wrangler, not ahead of it.
 compatibility_date = "2026-08-08"
-compatibility_flags = ["nodejs_als"]
+# `nodejs_compat` (which subsumes `nodejs_als`) is required from M2 on: Better
+# Auth reaches for `node:crypto`, `node:os` and `node:path`, and without it the
+# Worker fails to start with `No such module "node:crypto"`. Needs a
+# compatibility_date of 2024-09-23 or later, which the date above satisfies.
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 preview_urls = true
 

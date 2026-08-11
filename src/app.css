@@ -1,0 +1,314 @@
+/*
+ * Global stylesheet: tokens first, then a small reset, then the handful of
+ * shared classes the public pages compose from. Component-local styles live in
+ * the `.svelte` files; anything reused across routes belongs here.
+ *
+ * Colour rule (load-bearing): the complete light palette is defined on bare
+ * `:root`. The dark block only *overrides* token values, so every colour has a
+ * definition outside a media query and nothing renders unstyled if the query
+ * never matches.
+ */
+
+@layer reset, tokens, base, layout, components;
+
+@layer tokens {
+	:root {
+		/* ---- Typeface. No CDN fonts: the repo has no external-asset budget. ---- */
+		--font-sans:
+			ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+			sans-serif;
+		--font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+		/* ---- Type scale. Fluid between a 320px and a 1240px viewport, ratio
+		       ~1.125 at the body end widening to ~1.2 at the display end. ---- */
+		--text-xs: clamp(0.78rem, 0.76rem + 0.1vw, 0.83rem);
+		--text-sm: clamp(0.89rem, 0.86rem + 0.14vw, 0.95rem);
+		--text-base: clamp(1rem, 0.97rem + 0.17vw, 1.09rem);
+		--text-lg: clamp(1.13rem, 1.07rem + 0.28vw, 1.31rem);
+		--text-xl: clamp(1.27rem, 1.18rem + 0.44vw, 1.56rem);
+		--text-2xl: clamp(1.42rem, 1.29rem + 0.66vw, 1.86rem);
+		--text-3xl: clamp(1.6rem, 1.4rem + 0.98vw, 2.22rem);
+		--text-4xl: clamp(1.8rem, 1.51rem + 1.44vw, 2.65rem);
+
+		--leading-tight: 1.15;
+		--leading-snug: 1.35;
+		--leading-normal: 1.65;
+
+		--tracking-tight: -0.015em;
+		--tracking-wide: 0.08em;
+
+		/* ---- Spacing. 0.25rem base, roughly 1.5x per step at the top end. ---- */
+		--space-2xs: 0.25rem;
+		--space-xs: 0.5rem;
+		--space-sm: 0.75rem;
+		--space-md: 1rem;
+		--space-lg: 1.5rem;
+		--space-xl: 2.5rem;
+		--space-2xl: 4rem;
+		--space-3xl: 6rem;
+
+		/* ---- Measure and page widths ---- */
+		--measure: 65ch;
+		--width-page: 64rem;
+		--gutter: clamp(1.25rem, 4vw, 3rem);
+
+		/* ---- Radii ---- */
+		--radius-sm: 0.25rem;
+		--radius-md: 0.5rem;
+		--radius-lg: 0.875rem;
+		--radius-pill: 999px;
+
+		/* ---- Semantic colour, light ---- */
+		--color-canvas: #fbfaf8;
+		--color-surface: #ffffff;
+		--color-surface-sunken: #f3f1ec;
+		--color-ink: #1a1917;
+		--color-ink-muted: #55534d;
+		--color-ink-faint: #6f6c64;
+		--color-line: #e4e0d8;
+		--color-line-strong: #cdc8bd;
+		--color-accent: #0f6b5c;
+		--color-accent-hover: #0b5145;
+		--color-accent-wash: #e7f1ee;
+		--color-on-accent: #ffffff;
+		--color-focus: #0f6b5c;
+
+		--shadow-sm: 0 1px 2px rgb(26 25 23 / 6%), 0 1px 1px rgb(26 25 23 / 4%);
+
+		color-scheme: light;
+	}
+
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--color-canvas: #121312;
+			--color-surface: #191b19;
+			--color-surface-sunken: #0d0e0d;
+			--color-ink: #ece9e3;
+			--color-ink-muted: #a8a49b;
+			--color-ink-faint: #858177;
+			--color-line: #2b2d2b;
+			--color-line-strong: #3f423f;
+			--color-accent: #5fd0b6;
+			--color-accent-hover: #86e2cc;
+			--color-accent-wash: #14312a;
+			--color-on-accent: #08201b;
+			--color-focus: #5fd0b6;
+
+			--shadow-sm: 0 1px 2px rgb(0 0 0 / 40%), 0 1px 1px rgb(0 0 0 / 30%);
+
+			color-scheme: dark;
+		}
+	}
+}
+
+@layer reset {
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+
+	:where(body, h1, h2, h3, h4, p, figure, blockquote, ul, ol, dl, dd) {
+		margin: 0;
+	}
+
+	:where(ul[role='list'], ol[role='list']) {
+		padding-inline-start: 0;
+		list-style: none;
+	}
+
+	:where(img, picture, svg, video) {
+		display: block;
+		max-width: 100%;
+		height: auto;
+	}
+
+	:where(button, input, select, textarea) {
+		font: inherit;
+		color: inherit;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
+	}
+}
+
+@layer base {
+	html {
+		-webkit-text-size-adjust: 100%;
+		scroll-behavior: smooth;
+	}
+
+	body {
+		min-height: 100dvh;
+		margin: 0;
+		background-color: var(--color-canvas);
+		color: var(--color-ink);
+		font-family: var(--font-sans);
+		font-size: var(--text-base);
+		line-height: var(--leading-normal);
+		text-rendering: optimizeLegibility;
+		-webkit-font-smoothing: antialiased;
+		/* Long words and URLs must not push the layout past a 360px viewport. */
+		overflow-wrap: break-word;
+	}
+
+	h1,
+	h2,
+	h3,
+	h4 {
+		font-weight: 620;
+		line-height: var(--leading-tight);
+		letter-spacing: var(--tracking-tight);
+		text-wrap: balance;
+	}
+
+	h1 {
+		font-size: var(--text-4xl);
+	}
+
+	h2 {
+		font-size: var(--text-2xl);
+	}
+
+	h3 {
+		font-size: var(--text-lg);
+	}
+
+	p {
+		text-wrap: pretty;
+	}
+
+	a {
+		color: var(--color-accent);
+		text-decoration-thickness: 1px;
+		text-underline-offset: 0.18em;
+	}
+
+	a:hover {
+		color: var(--color-accent-hover);
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--color-focus);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+
+	code,
+	kbd,
+	samp {
+		font-family: var(--font-mono);
+		font-size: 0.92em;
+	}
+
+	hr {
+		height: 1px;
+		border: 0;
+		background-color: var(--color-line);
+	}
+}
+
+@layer layout {
+	/* Horizontal rhythm for every full-width band on the page. */
+	.shell {
+		width: 100%;
+		max-width: var(--width-page);
+		margin-inline: auto;
+		padding-inline: var(--gutter);
+	}
+
+	/* Vertical rhythm between the major sections of a page. */
+	.stack-page > * + * {
+		margin-block-start: var(--space-2xl);
+	}
+
+	.skip-link {
+		position: absolute;
+		inset-block-start: var(--space-xs);
+		inset-inline-start: var(--space-xs);
+		z-index: 10;
+		padding: var(--space-xs) var(--space-md);
+		border-radius: var(--radius-md);
+		background-color: var(--color-accent);
+		color: var(--color-on-accent);
+		text-decoration: none;
+		transform: translateY(-200%);
+	}
+
+	.skip-link:focus-visible {
+		transform: none;
+	}
+}
+
+@layer components {
+	/* Long-form copy rendered from `content_entry.body_html`. Held to a readable
+	   measure rather than the full page width. */
+	.prose {
+		max-width: var(--measure);
+		color: var(--color-ink-muted);
+		font-size: var(--text-lg);
+	}
+
+	.prose > * + * {
+		margin-block-start: var(--space-md);
+	}
+
+	.prose > * + :is(h2, h3) {
+		margin-block-start: var(--space-xl);
+	}
+
+	.prose :is(h2, h3) {
+		color: var(--color-ink);
+	}
+
+	.prose :is(ul, ol) {
+		padding-inline-start: var(--space-lg);
+	}
+
+	.prose li + li {
+		margin-block-start: var(--space-2xs);
+	}
+
+	.prose strong {
+		color: var(--color-ink);
+	}
+
+	/* Small uppercase label used above section headings. */
+	.eyebrow {
+		margin-block-end: var(--space-xs);
+		color: var(--color-ink-faint);
+		font-size: var(--text-xs);
+		font-weight: 600;
+		letter-spacing: var(--tracking-wide);
+		text-transform: uppercase;
+	}
+
+	.link-arrow {
+		display: inline-flex;
+		align-items: baseline;
+		gap: var(--space-2xs);
+		font-weight: 550;
+		text-decoration: none;
+	}
+
+	.link-arrow::after {
+		content: '\2192';
+		transition: transform 150ms ease;
+	}
+
+	.link-arrow:hover::after {
+		transform: translateX(0.15em);
+	}
+
+	.link-arrow:hover {
+		text-decoration: underline;
+	}
+}

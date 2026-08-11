@@ -251,6 +251,31 @@ async function main() {
 				!force
 			) {
 				unchanged += 1;
+
+				// Tightening an already-published asset in place is refused.
+				//
+				// REVIEW FINDING 2026-08-11. A public asset's bytes may sit in a
+				// shared cache. Editing its rank in D1 does not evict them, so
+				// the old URL keeps serving to anyone — the Worker is never
+				// consulted on a cache hit. Loosening is fine; tightening is the
+				// dangerous direction, and it is exactly what someone does after
+				// publishing a photo more widely than they meant to.
+				//
+				// The safe move is a NEW asset id, which is a URL nothing has
+				// cached. Refuse here rather than documenting it, because the
+				// person hitting this is mid-mistake and already anxious.
+				const existingRank = Number(existing.min_tier_rank);
+				if (existingRank <= 0 && minTierRank > existingRank) {
+					fail(
+						`REFUSING to tighten ${fileName} (${assetId}) from rank ${existingRank} to ` +
+							`${minTierRank} in place.\n` +
+							`  Its bytes were served publicly and may still sit in a shared cache, which\n` +
+							`  a rank change cannot evict. Republish under a NEW asset id instead (rename\n` +
+							`  the file or use a different entry slug), then delete the old row.\n` +
+							`  --force does not override this; a cached public object is not recallable.`
+					);
+				}
+
 				// The bytes are already in R2 and correct. The rank may still
 				// have moved, and that costs one row write and no upload.
 				if (Number(existing.min_tier_rank) !== minTierRank && !dryRun) {

@@ -118,8 +118,24 @@ describe('mediaResponse', () => {
 	it('lets genuinely public media be cached, and does not vary it by cookie', () => {
 		const response = serve(get(), objectWith({ offset: 0, length: SIZE }), 0);
 
-		expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+		expect(response.headers.get('cache-control')).toBe('public, max-age=3600');
 		expect(response.headers.get('vary')).toBeNull();
+	});
+
+	// Regression guard for the 2026-08-11 review finding. `immutable` plus a
+	// year meant that tightening a public asset's rank could not evict what
+	// edges already held: anonymous requests kept getting the bytes on a cache
+	// HIT, with the Worker — and therefore every access check — never running.
+	// Bound the window instead. See the comment in `response.ts`.
+	it('never marks media immutable, at any rank', () => {
+		for (const rank of [0, 10, 20, 30, 100]) {
+			const cacheControl = serve(get(), objectWith({ offset: 0, length: SIZE }), rank).headers.get(
+				'cache-control'
+			);
+
+			expect(cacheControl).not.toContain('immutable');
+			expect(cacheControl).not.toMatch(/max-age=(\d{6,})/);
+		}
 	});
 
 	it('keeps a gated 304 out of shared caches too', () => {

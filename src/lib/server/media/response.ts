@@ -108,15 +108,31 @@ export type MediaResponseInit = {
  * private view is an R2 Class B read, which at this traffic is three orders of
  * magnitude inside the free allowance.
  *
- * Genuinely public media (`min_tier_rank = 0`) takes the immutable path
- * instead and is CDN-cached normally. The accepted cost, written down because
- * it is a real one: re-ranking a public asset to private later does not evict
- * what edges already hold. Tightening an asset therefore means giving it a new
- * id, not editing the rank of the old one.
+ * Genuinely public media (`min_tier_rank = 0`) is CDN-cacheable, but for ONE
+ * HOUR — not a year, and never `immutable`.
+ *
+ * REVIEW FINDING 2026-08-11, fixed here. This previously sent
+ * `public, max-age=31536000, immutable`. A reviewer confirmed the consequence
+ * live against workerd: publish an asset public, serve it once, then tighten
+ * its rank in D1, and the edge keeps serving the full bytes to *anonymous*
+ * requests on a cache HIT — the Worker never runs, so no access check runs
+ * either. A `friend` session got a family-tier asset the same way. The window
+ * was up to a year, and `scripts/media/publish.mjs` offered the exact
+ * operation that triggers it (re-publishing with a stricter `--min-tier`).
+ *
+ * The plan called "give it a new id when tightening" an accepted procedural
+ * risk. It is now an enforced one: publish.mjs refuses in-place tightening,
+ * and this bounds the residual exposure to an hour for anything that slips
+ * through. An hour of a mis-published photo is recoverable; a year is not.
+ *
+ * Do not restore `immutable` here without content-addressing the URL, which is
+ * the only way a long cache lifetime and a mutable rank can safely coexist.
  */
+const PUBLIC_MEDIA_MAX_AGE_SECONDS = 3600;
+
 function cacheHeadersFor(headers: Headers, requiredRank: number): void {
 	if (requiredRank <= PUBLIC_TIER_RANK) {
-		headers.set('cache-control', 'public, max-age=31536000, immutable');
+		headers.set('cache-control', `public, max-age=${PUBLIC_MEDIA_MAX_AGE_SECONDS}`);
 		return;
 	}
 

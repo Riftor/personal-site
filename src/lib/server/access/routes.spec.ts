@@ -27,7 +27,10 @@ describe('requiredRankFor', () => {
 	it('gives the listed pages their own minimum rank', () => {
 		expect(requiredRankFor('/private/now')).toBe(TIER_RANK.friend);
 		expect(requiredRankFor('/private/photos')).toBe(TIER_RANK.family);
-		expect(requiredRankFor('/private/calendar')).toBe(TIER_RANK.partner);
+		// A floor, not the answer: plan §4 gives every tier from `friend` up a
+		// calendar and varies how much of it they see. `tier.calendar_detail`
+		// makes that second decision, in `calendar/access.ts`.
+		expect(requiredRankFor('/private/calendar')).toBe(TIER_RANK.friend);
 	});
 
 	it('covers everything under a listed page with that page’s rank', () => {
@@ -83,8 +86,13 @@ describe('privateNavFor', () => {
 	});
 
 	it('shows only what a rank clears, cheapest first', () => {
+		expect(privateNavFor(TIER_RANK.friend).map((item) => item.href)).toEqual([
+			'/private/now',
+			'/private/calendar'
+		]);
 		expect(privateNavFor(TIER_RANK.family).map((item) => item.href)).toEqual([
 			'/private/now',
+			'/private/calendar',
 			'/private/photos'
 		]);
 	});

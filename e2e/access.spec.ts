@@ -48,9 +48,14 @@ const PRIVATE_PAGES = [
 		sentinels: ['Cornwall, July 2026', 'Family dinner, June 2026']
 	},
 	{
+		// Reachable from `friend`; how much of it each tier sees is
+		// `tier.calendar_detail`'s decision, covered in `calendar.spec.ts`.
+		// The sentinels are the page's own frame rather than event content:
+		// this page renders Caden's real calendar, so nothing about the events
+		// is stable enough to assert, and none of it belongs in a test file.
 		path: '/private/calendar',
-		minRank: 30,
-		sentinels: ['Thu 13 Aug, 09:00', 'Fri 14 Aug, 19:00']
+		minRank: 10,
+		sentinels: ['Showing the next', 'Home timezone']
 	}
 ] as const;
 
@@ -184,6 +189,28 @@ test('a signed-in visitor with no grant at all is refused, not treated as pendin
 	}
 });
 
+test('a grant naming a tier with no calendar is refused, not shown an empty week', async ({
+	context,
+	baseURL
+}) => {
+	// `public` is a real tier with a live grant behind it; its
+	// `calendar_detail` is `none`. An empty agenda would read as "he is free",
+	// so the page refuses — and refuses identically to a page that does not
+	// exist, so this tells the visitor nothing about the private half.
+	const fixture = await signIn(context, 'publictier', baseURL!);
+	expect(fixture.tier).toBe('public');
+
+	const real = await context.request.get('/private/calendar', { maxRedirects: 0 });
+	const invented = await context.request.get('/private/secrets', { maxRedirects: 0 });
+	const body = await real.text();
+
+	expect(real.status()).toBe(403);
+	expect(body).toContain(fixture.email);
+	expect(body).not.toContain('Showing the next');
+	expect(body).not.toContain('Home timezone');
+	expect(body).toBe(await invented.text());
+});
+
 test('a soft-revoked grant grants nothing', async ({ context, baseURL }) => {
 	// `access_grant` row still exists at tier `family`; only `revoked_at` is
 	// set. Reading the table without the `revoked_at IS NULL` filter would let
@@ -217,17 +244,17 @@ test('the 403 page renders the account and an escape route, and no page content'
 }) => {
 	const fixture = await signIn(context, 'friend', baseURL!);
 
-	const response = await page.goto('/private/calendar');
+	const response = await page.goto('/private/photos');
 
 	expect(response?.status()).toBe(403);
 	// It must not bounce an authenticated visitor into a sign-in loop.
-	expect(new URL(page.url()).pathname).toBe('/private/calendar');
+	expect(new URL(page.url()).pathname).toBe('/private/photos');
 	await expect(page.getByRole('heading', { level: 1 })).toHaveText('No access.');
 	await expect(page.getByText(fixture.email, { exact: false }).first()).toBeVisible();
 	await expect(
 		page.getByRole('button', { name: 'Sign out and try another account' })
 	).toBeVisible();
-	await expect(page.locator('body')).not.toContainText('Thu 13 Aug');
+	await expect(page.locator('body')).not.toContainText('Cornwall, July 2026');
 });
 
 test('a granted account still reads the public site, and sees only its own tier in the nav', async ({
@@ -235,13 +262,13 @@ test('a granted account still reads the public site, and sees only its own tier 
 	context,
 	baseURL
 }) => {
-	await signIn(context, 'family', baseURL!);
+	await signIn(context, 'friend', baseURL!);
 	await page.goto('/');
 
 	expect(page.url()).toBe(new URL('/', baseURL).toString());
 
 	const nav = page.getByRole('navigation', { name: 'Primary' });
 	await expect(nav.getByRole('link', { name: 'Now' })).toBeVisible();
-	await expect(nav.getByRole('link', { name: 'Photos' })).toBeVisible();
-	await expect(nav.getByRole('link', { name: 'Calendar' })).toHaveCount(0);
+	await expect(nav.getByRole('link', { name: 'Calendar' })).toBeVisible();
+	await expect(nav.getByRole('link', { name: 'Photos' })).toHaveCount(0);
 });

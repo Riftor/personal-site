@@ -51,6 +51,10 @@ const FIXTURES = [
 	// Signed in, never granted anything. Plan §2: this is not a pending state,
 	// it is simply the public tier.
 	{ key: 'nogrant', tier: null, revoked: false },
+	// A live grant that names the tier whose `calendar_detail` is `none`.
+	// Nothing is wrong with this row; it simply grants no calendar, and the
+	// page has to refuse rather than render an empty week.
+	{ key: 'publictier', tier: 'public', revoked: false },
 	// Granted, then soft-revoked. Must behave exactly like `nogrant`.
 	{ key: 'revoked', tier: 'family', revoked: true }
 ];

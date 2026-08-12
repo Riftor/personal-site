@@ -27,7 +27,9 @@ const TITLES = {
 	offsite: 'Team offsite',
 	bookClub: 'Book club',
 	cancelled: 'Cancelled lunch',
-	cornwall: 'Cornwall'
+	cornwall: 'Cornwall',
+	freeTalk: 'Optional talk on typography',
+	freeBand: 'Bin day'
 } as const;
 
 const LOCATION = 'The Studio, 4 Pike Lane';
@@ -100,6 +102,23 @@ const EVENTS: GoogleCalendarEvent[] = [
 		start: { dateTime: '2026-08-12T10:00:00+01:00' },
 		end: { dateTime: '2026-08-12T11:00:00+01:00' },
 		attendees: [{ email: GUEST_EMAILS[2], responseStatus: 'tentative' }]
+	},
+	// Marked Free. Ruled 2026-08-12: dropped at every tier, because rendering
+	// it as a busy block would misstate the one thing this page is for.
+	{
+		summary: TITLES.freeTalk,
+		location: 'Lecture theatre 2',
+		transparency: 'transparent',
+		start: { dateTime: '2026-08-12T13:00:00+01:00' },
+		end: { dateTime: '2026-08-12T14:00:00+01:00' }
+	},
+	// Free and all-day, which is Google's own default for an all-day event —
+	// the case that makes this ruling cost something.
+	{
+		summary: TITLES.freeBand,
+		transparency: 'transparent',
+		start: { date: '2026-08-18' },
+		end: { date: '2026-08-19' }
 	},
 	// No start at all. Not something anyone can schedule around.
 	{ summary: 'Someday', end: { dateTime: '2026-08-12T18:00:00+01:00' } }
@@ -198,6 +217,59 @@ describe('redactEvents', () => {
 
 		expect(serialised).not.toContain(TITLES.offsite);
 		expect(serialised).not.toContain(TITLES.bookClub);
+	});
+
+	/**
+	 * Ruled 2026-08-12. The page exists so people can schedule around Caden,
+	 * and a Free event rendered as Busy is a lie about his availability — so
+	 * they go, at every tier, rather than being kept as bare blocks.
+	 */
+	it('drops events marked Free at every tier, timed and all-day alike', () => {
+		for (const detail of ['busy', 'titles', 'full'] as const) {
+			const payload = payloadFor(detail, 365);
+			const serialised = JSON.stringify(payload);
+
+			expect(serialised, detail).not.toContain(TITLES.freeTalk);
+			expect(serialised, detail).not.toContain(TITLES.freeBand);
+			expect(serialised, detail).not.toContain('Lecture theatre 2');
+			// Not even the time survives: a Free hour is not a busy hour.
+			const starts = payload.blocks.map((block) => block.start);
+			expect(starts, detail).not.toContain('2026-08-12T13:00:00+01:00');
+			expect(starts, detail).not.toContain('2026-08-18');
+		}
+	});
+
+	/**
+	 * Google omits `transparency` on most timed events because its default is
+	 * `opaque`. Treating anything unrecognised as Free would empty the
+	 * calendar rather than fill it, which is the failure that looks like
+	 * "Caden has nothing on".
+	 */
+	it('keeps an event whose transparency is absent or unrecognised', () => {
+		const payload = redactEvents(
+			[
+				{
+					summary: 'Explicitly busy',
+					transparency: 'opaque',
+					start: { dateTime: '2026-08-12T09:00:00+01:00' },
+					end: { dateTime: '2026-08-12T10:00:00+01:00' }
+				},
+				{
+					summary: 'Something new from Google',
+					transparency: 'translucent',
+					start: { dateTime: '2026-08-12T11:00:00+01:00' },
+					end: { dateTime: '2026-08-12T12:00:00+01:00' }
+				},
+				{
+					summary: 'No transparency field at all',
+					start: { dateTime: '2026-08-12T15:00:00+01:00' },
+					end: { dateTime: '2026-08-12T16:00:00+01:00' }
+				}
+			],
+			{ detail: 'titles', horizonDays: 30, timeZone: 'Europe/London', fetchedAt: 0 }
+		);
+
+		expect(payload.blocks).toHaveLength(3);
 	});
 
 	it('drops cancelled events and events with no start', () => {

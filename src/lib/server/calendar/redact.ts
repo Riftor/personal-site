@@ -10,13 +10,20 @@ import type { CalendarDetail } from '../db/schema';
  * sees a raw Google event, and nothing here caches — that ordering is the
  * whole point and reversing it (cache raw, redact on read) would undo it.
  *
- * The three rules that hold at **every** tier, partner included:
+ * The four rules that hold at **every** tier, partner included:
  *
  *  1. `private`- and `confidential`-visibility events reduce to `busy`. This
  *     is Caden's only per-event control over his own calendar and there is
  *     deliberately no tier that overrides it.
  *  2. Declined events are dropped entirely.
- *  3. **No attendee data, ever.** Not names, not addresses, not counts, not
+ *  3. **Events marked Free are dropped entirely** (ruled 2026-08-12). This
+ *     page exists so people can schedule around Caden, and rendering a Free
+ *     event as a busy block misrepresents his availability — which is the one
+ *     thing the page is for. One rule at every tier, no per-tier exception.
+ *     The cost, accepted knowingly: an informational all-day entry marked
+ *     Free disappears too, and Google's own default for all-day events is
+ *     Free.
+ *  4. **No attendee data, ever.** Not names, not addresses, not counts, not
  *     response statuses. Those are third parties who did not consent to being
  *     on this website. `CalendarBlock` has no field they could be written to,
  *     which is a stronger guarantee than remembering to strip them.
@@ -60,6 +67,7 @@ export type GoogleCalendarEvent = {
 	location?: unknown;
 	description?: unknown;
 	visibility?: unknown;
+	transparency?: unknown;
 	start?: unknown;
 	end?: unknown;
 	attendees?: unknown;
@@ -107,6 +115,14 @@ export type RedactOptions = {
 
 /** Visibilities that override the tier and reduce the event to a bare block. */
 const OPAQUE_VISIBILITIES = new Set(['private', 'confidential']);
+
+/**
+ * Google's word for "Free". Compared as an exact string so an absent or
+ * unexpected `transparency` keeps the event: the API's own default is
+ * `opaque`, and it omits the field on most timed events, so treating anything
+ * unrecognised as Free would empty the calendar rather than fill it.
+ */
+const FREE_TRANSPARENCY = 'transparent';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -215,6 +231,7 @@ export function redactEvents(
 	for (const event of events) {
 		if (typeof event !== 'object' || event === null) continue;
 		if (event.status === 'cancelled') continue;
+		if (event.transparency === FREE_TRANSPARENCY) continue;
 		if (isDeclinedBySelf(event.attendees, selfEmail)) continue;
 
 		const start = boundary(event.start);

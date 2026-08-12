@@ -30,7 +30,14 @@ export const PRIVATE_PREFIX = '/private';
 const PRIVATE_ROUTE_MIN_RANK: Readonly<Record<string, number>> = Object.freeze({
 	'/private/now': TIER_RANK.friend,
 	'/private/photos': TIER_RANK.family,
-	'/private/calendar': TIER_RANK.partner
+	/**
+	 * A floor, not the answer. Plan §4 gives every tier from `friend` up a
+	 * calendar and varies *how much of it* they see — so the page is reachable
+	 * from `friend`, and `tier.calendar_detail` decides the rest inside
+	 * `calendar/access.ts`. A tier whose detail is `none` is refused there,
+	 * with the same 403 this table would have produced.
+	 */
+	'/private/calendar': TIER_RANK.friend
 });
 
 /** What an unlisted path under `/private` costs. Nobody but Caden clears it. */

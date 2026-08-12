@@ -48,6 +48,13 @@ const PRIVATE_PAGES = [
 		sentinels: ['Cornwall, July 2026', 'Family dinner, June 2026']
 	},
 	{
+		// The memory index (M6). Its own entries carry per-entry tiers on top of
+		// this floor; `content.spec.ts` covers that.
+		path: '/private/memories',
+		minRank: 20,
+		sentinels: ['Trips, days out', 'Three days of rain']
+	},
+	{
 		// Reachable from `friend`; how much of it each tier sees is
 		// `tier.calendar_detail`'s decision, covered in `calendar.spec.ts`.
 		// The sentinels are the page's own frame rather than event content:
@@ -78,7 +85,7 @@ async function signIn(context: BrowserContext, key: string, baseURL: string) {
 const signinLocationFor = (path: string) => `/signin?next=${encodeURIComponent(path)}`;
 
 /* ------------------------------------------------------------------ *
- * The matrix: 4 viewers x 3 private URLs = 12 cases.
+ * The matrix: 4 viewers x 4 private URLs = 16 cases.
  * ------------------------------------------------------------------ */
 
 for (const viewer of VIEWERS) {

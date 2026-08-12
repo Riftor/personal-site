@@ -21,15 +21,17 @@ export const PRIVATE_PREFIX = '/private';
 /**
  * Minimum rank per private prefix. A prefix covers the path itself and
  * anything under it; the longest match wins.
- *
- * `/private/memories` is in the plan's table but is deliberately *not* here:
- * the route does not exist until M6, and an entry for a route that does not
- * exist is a hole waiting for someone to build into it. Add the line in the
- * same commit as the route.
  */
 const PRIVATE_ROUTE_MIN_RANK: Readonly<Record<string, number>> = Object.freeze({
 	'/private/now': TIER_RANK.friend,
 	'/private/photos': TIER_RANK.family,
+	/**
+	 * A floor, and it covers `/private/memories/<slug>` too. The entry's own
+	 * `min_tier_rank` is the real answer and is applied inside the query, so a
+	 * memory published at `partner` is not listed for a family session and its
+	 * URL answers with the same 403 as a slug that does not exist.
+	 */
+	'/private/memories': TIER_RANK.family,
 	/**
 	 * A floor, not the answer. Plan §4 gives every tier from `friend` up a
 	 * calendar and varies *how much of it* they see — so the page is reachable

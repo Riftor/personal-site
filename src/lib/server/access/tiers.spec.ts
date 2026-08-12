@@ -26,6 +26,16 @@ describe('TIER_RANK', () => {
 		expect(seeded).toEqual(TIER_RANK);
 	});
 
+	it('matches the third copy, the one the publish CLIs read', async () => {
+		// `scripts/lib/tiers.mjs` cannot import this module — the CLIs run under
+		// bare `node` with no build step — so it is a copy, and the same drift
+		// argument applies. A rank edited here and not there would mean the site
+		// and the tool that publishes to it disagreed about who `family` is.
+		const { TIER_RANK: cliRanks } = await import('../../../../scripts/lib/tiers.mjs');
+
+		expect({ ...cliRanks }).toEqual(TIER_RANK);
+	});
+
 	it('keeps public at the bottom and owner at the top', () => {
 		const ranks = Object.values(TIER_RANK);
 

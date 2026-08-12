@@ -12,14 +12,18 @@ export default defineConfig({
 	// has started, with no contention at all.
 	//
 	// `test:seed:media` transcodes the fixtures and uploads them to local R2
-	// through the real publish CLI. That is slow the first time — a cold run
-	// is a minute of ffmpeg and one `wrangler r2 object put` per object — and
-	// close to nothing afterwards, because the publisher skips anything whose
-	// content hash has not moved. The timeout is sized for the cold case.
+	// through the real publish CLI, and `test:seed:content` does the same for
+	// the `content/` folders through the M6 one. Both are slow the first time —
+	// a cold run is minutes of ffmpeg and one `wrangler r2 object put` per
+	// object — and close to nothing afterwards, because the publisher skips
+	// anything whose content hash has not moved. The timeout is sized for the
+	// cold case.
 	webServer: {
-		command: 'npm run build && npm run test:seed && npm run test:seed:media && npm run preview',
+		command:
+			'npm run build && npm run test:seed && npm run test:seed:media && ' +
+			'npm run test:seed:content && npm run preview',
 		port: 4173,
-		timeout: 300_000
+		timeout: 600_000
 	},
 	use: { baseURL: 'http://localhost:4173' }
 });

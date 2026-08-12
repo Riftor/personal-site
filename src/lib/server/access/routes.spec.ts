@@ -21,12 +21,16 @@ describe('requiredRankFor', () => {
 	it('default-denies /private itself and anything nested under an unlisted path', () => {
 		expect(requiredRankFor('/private')).toBe(OWNER_TIER_RANK);
 		expect(requiredRankFor('/private/')).toBe(OWNER_TIER_RANK);
-		expect(requiredRankFor('/private/memories/2026-07-cornwall')).toBe(OWNER_TIER_RANK);
+		expect(requiredRankFor('/private/journal/2026-07-cornwall')).toBe(OWNER_TIER_RANK);
 	});
 
 	it('gives the listed pages their own minimum rank', () => {
 		expect(requiredRankFor('/private/now')).toBe(TIER_RANK.friend);
 		expect(requiredRankFor('/private/photos')).toBe(TIER_RANK.family);
+		// Also a floor: a memory's own `min_tier_rank` is applied in the query,
+		// so a `partner` memory under this `family` prefix is still refused.
+		expect(requiredRankFor('/private/memories')).toBe(TIER_RANK.family);
+		expect(requiredRankFor('/private/memories/2026-07-cornwall')).toBe(TIER_RANK.family);
 		// A floor, not the answer: plan §4 gives every tier from `friend` up a
 		// calendar and varies how much of it they see. `tier.calendar_detail`
 		// makes that second decision, in `calendar/access.ts`.
@@ -93,7 +97,8 @@ describe('privateNavFor', () => {
 		expect(privateNavFor(TIER_RANK.family).map((item) => item.href)).toEqual([
 			'/private/now',
 			'/private/calendar',
-			'/private/photos'
+			'/private/photos',
+			'/private/memories'
 		]);
 	});
 

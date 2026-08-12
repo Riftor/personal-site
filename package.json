@@ -27,8 +27,12 @@
 		"access:list": "node scripts/access.mjs list",
 		"test:seed": "node scripts/seed-e2e-access.mjs",
 		"test:seed:media": "node scripts/seed-e2e-media.mjs",
+		"test:seed:content": "node scripts/seed-e2e-content.mjs",
 		"media:fixtures": "node scripts/media/fixtures.mjs",
-		"media:publish": "node scripts/media/publish.mjs"
+		"media:publish": "node scripts/media/publish.mjs",
+		"content:fixtures": "node scripts/content/fixtures.mjs",
+		"content:publish": "node scripts/content/publish.mjs",
+		"publish": "node scripts/content/publish.mjs"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

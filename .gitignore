@@ -35,3 +35,5 @@ playwright-report
 e2e/.access-fixtures.json
 # Local e2e media ids, written by scripts/seed-e2e-media.mjs.
 e2e/.media-fixtures.json
+# Local e2e content slugs, written by scripts/seed-e2e-content.mjs.
+e2e/.content-fixtures.json

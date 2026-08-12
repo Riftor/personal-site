@@ -52,8 +52,12 @@ const GPS = {
 const jpegWithExif = (jpeg, exif) =>
 	Buffer.from(piexif.insert(exif, jpeg.toString('binary')), 'binary');
 
-/** A gradient with some structure in it, so resizing and blurhash have work to do. */
-async function paintImage() {
+/**
+ * A gradient with some structure in it, so resizing and blurhash have work to
+ * do. `seed` shifts the phase and the palette so a folder of fixtures is a
+ * folder of visibly different photographs rather than the same one five times.
+ */
+async function paintImage(seed = 0) {
 	const width = 2000;
 	const height = 1333;
 	const pixels = Buffer.alloc(width * height * 3);
@@ -61,10 +65,10 @@ async function paintImage() {
 	for (let y = 0; y < height; y += 1) {
 		for (let x = 0; x < width; x += 1) {
 			const offset = (y * width + x) * 3;
-			const wave = Math.sin(x / 90) * Math.cos(y / 70);
+			const wave = Math.sin(x / (90 + seed * 17)) * Math.cos(y / (70 + seed * 11));
 			pixels[offset] = Math.round(120 + 90 * wave);
-			pixels[offset + 1] = Math.round(140 + 70 * Math.sin((x + y) / 160));
-			pixels[offset + 2] = Math.round(170 + 60 * Math.cos(y / 120));
+			pixels[offset + 1] = Math.round(140 + 70 * Math.sin((x + y) / (160 + seed * 40)));
+			pixels[offset + 2] = Math.round(170 + 60 * Math.cos(y / (120 + seed * 23)));
 		}
 	}
 
@@ -73,7 +77,15 @@ async function paintImage() {
 		.toBuffer();
 }
 
-export async function writeImageFixture() {
+/**
+ * Writes one photograph-shaped JPEG carrying real GPS and camera serials.
+ *
+ * `path` and `seed` exist so `scripts/content/fixtures.mjs` can fill a memory
+ * folder with several distinct photos through this same generator — there is
+ * one place in the repo that invents media, and every test and every fixture
+ * comes out of it.
+ */
+export async function writeImageFixture(path = FIXTURE_IMAGE, seed = 0) {
 	const exif = piexif.dump({
 		'0th': {
 			[piexif.ImageIFD.Make]: 'Fixture Optics',
@@ -97,8 +109,8 @@ export async function writeImageFixture() {
 		}
 	});
 
-	writeFileSync(FIXTURE_IMAGE, jpegWithExif(await paintImage(), exif));
-	return FIXTURE_IMAGE;
+	writeFileSync(path, jpegWithExif(await paintImage(seed), exif));
+	return path;
 }
 
 /**
@@ -107,7 +119,7 @@ export async function writeImageFixture() {
  * being an image-only thing. `-map_metadata -1` in the pipeline is what has to
  * remove it, and this is what gives it something to remove.
  */
-export function writeVideoFixture() {
+export function writeVideoFixture(path = FIXTURE_VIDEO) {
 	execFileSync(ffmpegPath, [
 		'-hide_banner',
 		'-loglevel',
@@ -141,10 +153,10 @@ export function writeVideoFixture() {
 		'make=Fixture Optics',
 		'-metadata',
 		'model=FX-1 Bodycam',
-		FIXTURE_VIDEO
+		path
 	]);
 
-	return FIXTURE_VIDEO;
+	return path;
 }
 
 /** Both fixtures, generated only if they are not already on disk. */

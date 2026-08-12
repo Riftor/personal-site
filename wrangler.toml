@@ -23,6 +23,15 @@ database_name = "personal-site"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "drizzle"
 
+# Calendar cache warmers (plan §4). Two schedules, not one: the 30- and 90-day
+# variants are cheap and change often, while the 365-day partner variant is a
+# ten-page fetch that changes far less per unit time. `warm.ts` maps each cron
+# expression to the variants it owns, so these two strings must match the
+# constants there. This is a warmer only — a cold request still reads live, so
+# a cron that never fires costs latency and nothing else.
+[triggers]
+crons = ["*/15 * * * *", "0 * * * *"]
+
 # R2. The local bucket is simulated by wrangler; the remote one is not created yet.
 # It must never get an r2.dev public URL or a custom domain — see plan §5.
 [[r2_buckets]]

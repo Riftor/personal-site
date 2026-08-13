@@ -13,7 +13,7 @@ import type { RequestHandler } from './$types';
  * (plan §2).
  */
 export const POST: RequestHandler = async ({ request, url, platform }) => {
-	const auth = createAuth(platform, url.origin);
+	const auth = createAuth(platform, url.origin, request.headers);
 	const next = safeRedirectTarget(new URL(request.url).searchParams.get('next'));
 
 	const response = await auth.api.signOut({ headers: request.headers, asResponse: true });

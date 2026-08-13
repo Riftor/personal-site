@@ -8,9 +8,13 @@ import type { RequestHandler } from './$types';
  *
  * The handler's own `Response` is returned untouched so its `Set-Cookie`
  * headers reach the browser exactly as Better Auth wrote them.
+ *
+ * This is the one route where Better Auth creates a `session` row, so it is
+ * also the one route whose headers reach the `signin` audit hook. They are
+ * passed for `CF-Connecting-IP` and nothing else (plan §8.2).
  */
 const handle: RequestHandler = ({ request, url, platform }) =>
-	createAuth(platform, url.origin).handler(request);
+	createAuth(platform, url.origin, request.headers).handler(request);
 
 export const GET = handle;
 export const POST = handle;

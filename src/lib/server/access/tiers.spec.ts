@@ -59,30 +59,28 @@ describe('rankRequiredFor', () => {
 });
 
 describe('resolveGrantedTier', () => {
-	it('accepts a well-formed row', () => {
-		expect(resolveGrantedTier('partner', 30)).toEqual({ slug: 'partner', rank: 30 });
-		expect(resolveGrantedTier('public', PUBLIC_TIER_RANK)).toEqual({
-			slug: 'public',
-			rank: PUBLIC_TIER_RANK
-		});
+	it('accepts a slug the tier table knows', () => {
+		expect(resolveGrantedTier('partner')).toEqual({ slug: 'partner', rank: 30 });
+		expect(resolveGrantedTier('public')).toEqual({ slug: 'public', rank: PUBLIC_TIER_RANK });
 	});
 
 	it('returns no tier for anything the database should not have contained', () => {
-		const bad: [unknown, unknown][] = [
-			['wizard', 999], // slug that is not a tier
-			[null, 30],
-			[undefined, 30],
-			[30, 30], // slug that is not a string
-			['partner', null], // NULL rank
-			['partner', undefined],
-			['partner', '30'], // rank arrived as text
-			['partner', 20.5],
-			['partner', Number.NaN],
-			['partner', -1]
-		];
+		const bad: unknown[] = ['wizard', '', 'Partner', null, undefined, 30, {}, ['partner']];
 
-		for (const [slug, rank] of bad) {
-			expect(resolveGrantedTier(slug, rank), `${String(slug)} / ${String(rank)}`).toBeNull();
+		for (const slug of bad) {
+			expect(resolveGrantedTier(slug), String(slug)).toBeNull();
+		}
+	});
+
+	// Plan §8.6. `routes.ts` resolves what a route *demands* from `TIER_RANK`
+	// because a guard cannot afford a query; a viewer's rank used to come from
+	// the `tier.rank` column instead. Two sources for one number, one of which
+	// moves without a deploy, is how `friend` at rank 25 in D1 walked into a
+	// page that still demanded the compile-time 20.
+	it('takes the rank from code, so the column cannot drift away from the demand', () => {
+		for (const slug of TIER_SLUGS) {
+			expect(resolveGrantedTier(slug)).toEqual({ slug, rank: TIER_RANK[slug] });
+			expect(resolveGrantedTier(slug)?.rank).toBe(rankRequiredFor(slug));
 		}
 	});
 });

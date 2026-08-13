@@ -2,14 +2,19 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { signinRedirectTarget } from '$lib/server/access/guard';
 import { requiredRankFor } from '$lib/server/access/routes';
 import { resolveViewer } from '$lib/server/access/viewer';
+import { recordDenial } from '$lib/server/audit';
 import { PUBLIC_TIER_RANK } from '$lib/server/db/schema';
+import { httpsRedirectTarget } from '$lib/server/https-redirect';
 import { applySecurityHeaders } from '$lib/server/security-headers';
 
 /**
  * The one choke point. `handle` runs before every server-side route with no
  * way around it, which is the property that picked SvelteKit for this site
- * (plan §1). It does three things, in this order:
+ * (plan §1). It does four things, in this order:
  *
+ *  0. Sends a cleartext request for the real site to HTTPS, before anything
+ *     else happens — see `$lib/server/https-redirect` for why the Cloudflare
+ *     zone setting is not enough on its own.
  *  1. Resolves `locals.viewer` — session, then live grant, then tier — so
  *     every loader downstream has an answer without repeating the query.
  *  2. Turns a signed-out request for a private path straight back at the door,
@@ -42,9 +47,18 @@ import { applySecurityHeaders } from '$lib/server/security-headers';
  * the `Set-Cookie` headers Kit merges in afterwards and turn a form-action
  * redirect into the wrong shape, which is a poor trade for headers on a
  * body-less, same-origin 302: there is nothing to frame, nothing to script,
- * and the `/signin` page it lands on one hop later sends all of them.
+ * and the `/signin` page it lands on one hop later sends all of them. The 301
+ * in step 0 escapes it for the same reason, and wants it least of all — HSTS is
+ * invalid on an HTTP response by definition.
  */
 export const handle: Handle = async ({ event, resolve }) => {
+	// Before the viewer, before `resolve`, before any query. A request that is
+	// about to be discarded is not worth a round trip to D1, and a redirect
+	// issued after the session cookie has already been read is a redirect that
+	// arrived too late to have protected it.
+	const secureURL = httpsRedirectTarget(event.url);
+	if (secureURL) redirect(301, secureURL);
+
 	const viewer = await resolveViewer(event);
 	event.locals.viewer = viewer;
 
@@ -73,15 +87,26 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// a spelling the table reads more strictly than the router does. Both are
 	// worth a log and neither is worth a body — which is discarded unread
 	// rather than streamed.
+	let answer = response;
 	if (!allowed && response.status < 300) {
 		console.error(
 			`access: ${event.url.pathname} returned ${response.status} to rank ${viewer.rank} ` +
 				`(the route table requires ${required}). Refused by the hook instead.`
 		);
-		return applySecurityHeaders(refuse(), event.url);
+		answer = refuse();
 	}
 
-	return applySecurityHeaders(response, event.url);
+	// Every page-level refusal, whichever layer produced it: `requireTier` in a
+	// loader, a per-entry rank inside a query, `calendar/access.ts`, or the
+	// backstop above. Keying on the status rather than on `allowed` is what
+	// catches the ones the route table alone cannot see — a family session
+	// refused a partner-only memory clears `required` and is still a denial.
+	// This runs after the answer is decided and changes nothing about it.
+	if (isPrivatePath && answer.status === 403) {
+		recordDenial(event.platform, event.request.headers, viewer, 'page');
+	}
+
+	return applySecurityHeaders(answer, event.url);
 };
 
 /**

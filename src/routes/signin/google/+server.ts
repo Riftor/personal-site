@@ -10,7 +10,7 @@ import type { RequestHandler } from './$types';
  * someone else's page.
  */
 export const POST: RequestHandler = async ({ request, url, platform }) => {
-	const auth = createAuth(platform, url.origin);
+	const auth = createAuth(platform, url.origin, request.headers);
 	const next = safeRedirectTarget(new URL(request.url).searchParams.get('next'));
 
 	const response = await auth.api.signInSocial({

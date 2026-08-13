@@ -1,4 +1,5 @@
 import { accessDecisionFor } from '$lib/server/access/guard';
+import { recordDenial } from '$lib/server/audit';
 import { findServableVariant } from '$lib/server/media/assets';
 import { mediaResponse, mediaUnavailable, refuseMedia } from '$lib/server/media/response';
 import { r2MediaStore } from '$lib/server/media/store';
@@ -57,7 +58,16 @@ export const GET: RequestHandler = async (event) => {
 	const requiredRank = record?.requiredRank ?? Number.POSITIVE_INFINITY;
 	const decision = accessDecisionFor(locals.viewer, requiredRank);
 
-	if (decision !== 'allow') return refuseMedia(decision);
+	if (decision !== 'allow') {
+		// The refusal below is unaffected by this line: the write is handed to
+		// `waitUntil` and cannot fail the request, and it carries neither the
+		// asset id nor the variant. The 401 and 403 bodies are byte-identical
+		// between an asset that exists and one that never did, and a log that
+		// recorded which had been asked for would answer the question the
+		// response refuses to.
+		recordDenial(platform, request.headers, locals.viewer, 'media');
+		return refuseMedia(decision);
+	}
 
 	// Unreachable — `allow` needs a finite rank and only a record supplies one
 	// — but it is the branch that would serve bytes with no rank behind them,

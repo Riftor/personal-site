@@ -11,10 +11,12 @@ import { resolveGrantedTier } from './tiers';
  * Resolved once per request in `hooks.server.ts` and carried on
  * `event.locals.viewer`. Two properties are load-bearing:
  *
- * 1. The tier comes from `access_grant` on **every** request, never from the
+ * 1. The grant comes from `access_grant` on **every** request, never from the
  *    session row and never from the cookie. That is the whole revocation
  *    story — `pnpm access:revoke` takes effect on the visitor's next page
- *    load rather than in thirty days.
+ *    load rather than in thirty days. What the grant is *worth* is a separate
+ *    question, answered by `TIER_RANK` in code since plan §8.6: which tier
+ *    somebody is in is live, what a tier means is a deploy.
  * 2. Every path out of here that is not "a session, an email, and a live
  *    grant naming a real tier" lands on `rank: 0`. There is no branch in this
  *    file where an unexpected value means "allow".
@@ -63,9 +65,9 @@ function normaliseEmail(email: unknown): string | null {
  */
 async function readSession(event: RequestEvent) {
 	try {
-		return await createAuth(event.platform, event.url.origin).api.getSession({
-			headers: event.request.headers
-		});
+		return await createAuth(event.platform, event.url.origin, event.request.headers).api.getSession(
+			{ headers: event.request.headers }
+		);
 	} catch (cause) {
 		console.error('access: session lookup failed, treating the request as signed out.', cause);
 		return null;
@@ -73,11 +75,16 @@ async function readSession(event: RequestEvent) {
 }
 
 /**
- * The live grant for an address, joined to `tier` for its rank.
+ * The live grant for an address, joined to `tier` to prove the tier exists.
  *
  * `revoked_at IS NULL` is what makes a soft-revoked row inert, and the join is
  * an inner one on purpose: a grant naming a tier that no longer exists yields
  * no row, which is the same as no grant. A failed query is also no grant.
+ *
+ * The slug is all that is selected. Since plan §8.6 the rank comes from
+ * `TIER_RANK` in code rather than from `tier.rank`, so selecting the column
+ * would be selecting a value nothing is allowed to trust — see
+ * `resolveGrantedTier`.
  */
 async function readGrant(event: RequestEvent, email: string) {
 	const d1 = event.platform?.env?.DB;
@@ -88,13 +95,13 @@ async function readGrant(event: RequestEvent, email: string) {
 
 	try {
 		const [row] = await getDb(d1)
-			.select({ slug: tier.slug, rank: tier.rank })
+			.select({ slug: tier.slug })
 			.from(accessGrant)
 			.innerJoin(tier, eq(tier.slug, accessGrant.tierSlug))
 			.where(and(eq(accessGrant.email, email), isNull(accessGrant.revokedAt)))
 			.limit(1);
 
-		return row ? resolveGrantedTier(row.slug, row.rank) : null;
+		return row ? resolveGrantedTier(row.slug) : null;
 	} catch (cause) {
 		console.error('access: grant lookup failed, resolving this request as public.', cause);
 		return null;

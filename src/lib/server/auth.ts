@@ -3,6 +3,7 @@ import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import type { BetterAuthOptions } from 'better-auth/types';
+import { recordSignIn } from './audit';
 import { getDb } from './db';
 import * as schema from './db/schema';
 
@@ -25,6 +26,7 @@ import * as schema from './db/schema';
 type DatabaseHooks = NonNullable<BetterAuthOptions['databaseHooks']>;
 type UserCreateBefore = NonNullable<NonNullable<DatabaseHooks['user']>['create']>['before'];
 type SessionCreateBefore = NonNullable<NonNullable<DatabaseHooks['session']>['create']>['before'];
+type SessionCreateAfter = NonNullable<NonNullable<DatabaseHooks['session']>['create']>['after'];
 type AccountCreateBefore = NonNullable<NonNullable<DatabaseHooks['account']>['create']>['before'];
 
 const DAY_SECONDS = 60 * 60 * 24;
@@ -115,6 +117,47 @@ export const rejectUnverifiedSession: NonNullable<SessionCreateBefore> = async (
 };
 
 /**
+ * The `signin` row in `audit_log` (plan §8.2).
+ *
+ * `session.create.after` is the only honest place for it. A session row is
+ * created exactly once per sign-in — a returning visitor's refresh is an
+ * *update*, and `user.create.before` fires only the very first time an address
+ * is seen — so this fires once per sign-in and never for a sign-in that was
+ * refused, because `rejectUnverifiedSession` runs before it and throws.
+ *
+ * Two things it must not do. It must not fail a sign-in: the after-hooks are
+ * awaited by Better Auth, so the user lookup is caught and `recordSignIn`
+ * never rejects by construction. And it must not invent an actor: if the user
+ * row cannot be read the row is still written, with a NULL actor, because
+ * "somebody signed in at this time and we could not say who" is a fact worth
+ * having rather than a reason to write nothing.
+ */
+export function auditSignIn(
+	platform: App.Platform | undefined,
+	headers: Headers | undefined
+): NonNullable<SessionCreateAfter> {
+	return async (session, context) => {
+		let email: string | null = null;
+
+		try {
+			const user = session.userId
+				? await context?.context.internalAdapter.findUserById(session.userId)
+				: null;
+			// Lowercased, because `access_grant.email` and the CLI's own audit
+			// rows are, and a log that does not join to them is half a log.
+			if (typeof user?.email === 'string') email = user.email.trim().toLowerCase();
+		} catch (cause) {
+			console.error(
+				'audit: the signed-in user could not be read; recording an anonymous signin.',
+				cause
+			);
+		}
+
+		recordSignIn(platform, headers, email);
+	};
+}
+
+/**
  * Both `vite dev` and `wrangler dev` supply the bindings and `.dev.vars`, so a
  * missing one means the server is running outside the Cloudflare runtime — a
  * misconfiguration, not a request that can degrade into an anonymous page.
@@ -140,8 +183,18 @@ function requireEnv(platform: App.Platform | undefined) {
  * The real allowlist is Google's registered redirect URIs — a request claiming
  * an origin Caden has not registered gets `redirect_uri_mismatch` from Google
  * and never reaches a token exchange.
+ *
+ * `requestHeaders` is only ever read for `CF-Connecting-IP`, so that the
+ * `signin` audit row can carry a truncated prefix. Every call site passes the
+ * inbound request's headers; only the one that runs Better Auth's own handler
+ * — the Google callback at `/api/auth/callback/google` — ever creates a session
+ * and therefore ever reaches the hook that uses them.
  */
-export function createAuth(platform: App.Platform | undefined, baseURL: string) {
+export function createAuth(
+	platform: App.Platform | undefined,
+	baseURL: string,
+	requestHeaders?: Headers
+) {
 	const env = requireEnv(platform);
 
 	return betterAuth({
@@ -191,7 +244,9 @@ export function createAuth(platform: App.Platform | undefined, baseURL: string) 
 
 		databaseHooks: {
 			user: { create: { before: rejectUnverifiedUser } },
-			session: { create: { before: rejectUnverifiedSession } },
+			session: {
+				create: { before: rejectUnverifiedSession, after: auditSignIn(platform, requestHeaders) }
+			},
 			account: { create: { before: withoutProviderTokens } }
 		},
 

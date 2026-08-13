@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	SESSION_EXPIRES_IN_SECONDS,
 	UNVERIFIED_EMAIL_CODE,
 	assertVerifiedEmail,
+	auditSignIn,
 	createAuth,
 	rejectUnverifiedSession,
 	rejectUnverifiedUser,
 	withoutProviderTokens
 } from './auth';
+import { CLIENT_IP_HEADER } from './audit';
 
 /**
  * These cover the configuration and the database hooks — the parts of M2 that
@@ -179,5 +181,93 @@ describe('the sign-in hooks', () => {
 		await expect(
 			rejectUnverifiedSession({} as SessionHookArgs[0], contextFor({ emailVerified: true }))
 		).rejects.toThrow(UNVERIFIED_EMAIL_CODE);
+	});
+});
+
+describe('auditSignIn', () => {
+	/** The `audit_log` insert, and the values bound to it. */
+	function auditPlatform() {
+		const values: unknown[][] = [];
+		const waited: Promise<unknown>[] = [];
+
+		const DB = {
+			prepare: () => {
+				const statement = {
+					bind: (...bound: unknown[]) => {
+						values.push(bound);
+						return statement;
+					},
+					run: async () => ({ success: true, results: [], meta: {} }),
+					all: async () => ({ success: true, results: [], meta: {} }),
+					first: async () => null,
+					raw: async () => []
+				};
+				return statement;
+			}
+		} as unknown as D1Database;
+
+		const auditingPlatform = {
+			env: { ...platform.env, DB },
+			ctx: { waitUntil: (promise: Promise<unknown>) => waited.push(promise) }
+		} as unknown as App.Platform;
+
+		const written = async () => {
+			await Promise.all(waited);
+			return values.flat().map(String);
+		};
+
+		return { platform: auditingPlatform, written };
+	}
+
+	const headers = new Headers({ [CLIENT_IP_HEADER]: '198.51.100.200' });
+	const withUser = (user: { email?: string } | null) =>
+		({
+			context: { internalAdapter: { findUserById: async () => user } }
+		}) as unknown as Parameters<ReturnType<typeof auditSignIn>>[1];
+
+	it('records the address and a truncated prefix', async () => {
+		const { platform: auditing, written } = auditPlatform();
+
+		await auditSignIn(auditing, headers)(
+			{ userId: 'user-1' } as Parameters<ReturnType<typeof auditSignIn>>[0],
+			withUser({ email: 'Friend@Example.Test' })
+		);
+
+		const row = await written();
+		expect(row).toContain('signin');
+		// Lowercased, so the row joins to `access_grant` and to the CLI's own
+		// grant and revoke rows.
+		expect(row).toContain('friend@example.test');
+		expect(row).toContain('198.51.100.0/24');
+		expect(row).not.toContain('198.51.100.200');
+	});
+
+	// Better Auth awaits its after-hooks, so a throw here would fail the
+	// sign-in it was only meant to observe.
+	it('cannot fail a sign-in, whatever goes wrong beneath it', async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const exploding = {
+			context: {
+				internalAdapter: {
+					findUserById: async () => {
+						throw new Error('D1_ERROR');
+					}
+				}
+			}
+		} as unknown as Parameters<ReturnType<typeof auditSignIn>>[1];
+
+		await expect(
+			auditSignIn(undefined, undefined)(
+				{ userId: 'user-1' } as Parameters<ReturnType<typeof auditSignIn>>[0],
+				exploding
+			)
+		).resolves.toBeUndefined();
+
+		expect(error).toHaveBeenCalled();
+		error.mockRestore();
+	});
+
+	it('is wired into the session hook, not just exported', () => {
+		expect(options.databaseHooks?.session?.create?.after).toBeTypeOf('function');
 	});
 });

@@ -10,16 +10,24 @@
  * keeps the highest-privilege operation in the system off the public internet
  * entirely, so there is no HTTP endpoint anywhere that can escalate a tier.
  *
- * Everything goes through `wrangler d1 execute`, local by default. Statements
- * are written to a temp file rather than passed on a command line so nothing
- * depends on shell quoting, and every value interpolated into SQL is either a
- * literal from a fixed allowlist or has been through `sqlString()` below.
+ * Everything goes through `wrangler d1 execute`, local by default. Nothing
+ * depends on shell quoting — `execFileSync` takes an argv array and never
+ * spawns a shell — and every value interpolated into SQL is either a literal
+ * from a fixed allowlist or has been through `sqlString()` in
+ * `lib/access-sql.mjs`.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import {
+	AccessError,
+	countSessionsFor,
+	NOW_SECONDS,
+	revokeStatements,
+	sqlString
+} from './lib/access-sql.mjs';
 
 const DATABASE = 'personal-site';
 
@@ -55,21 +63,6 @@ Local D1 unless --remote is passed.`;
 function fail(message) {
 	console.error(`access: ${message}`);
 	process.exit(1);
-}
-
-/**
- * A SQL string literal. Rejects anything it cannot represent rather than
- * trying to clean it up: the inputs here are an email address and a short
- * note, and a value containing a control character or a backslash is a
- * mistake worth stopping on, not worth escaping around.
- */
-function sqlString(value) {
-	const text = String(value);
-	// eslint-disable-next-line no-control-regex
-	if (/[\u0000-\u001f\u007f\\]/.test(text)) {
-		fail(`refusing to write a value containing control characters or a backslash: ${text}`);
-	}
-	return `'${text.replaceAll("'", "''")}'`;
 }
 
 /**
@@ -181,7 +174,6 @@ function d1(sql, { remote }) {
 /** Rows from the first (or only) statement in a batch. */
 const rowsOf = (results, index = 0) => results[index]?.results ?? [];
 
-const nowLiteral = 'unixepoch()';
 const auditId = () => sqlString(randomUUID());
 
 function requireTierExists(slug, options) {
@@ -217,7 +209,7 @@ function grant(positional, flags) {
 	// nothing is printed as granted that was not read back out of the table.
 	const results = d1(
 		`INSERT INTO access_grant (email, tier_slug, note, granted_at, granted_by, revoked_at)
-VALUES (${sqlString(email)}, ${sqlString(slug)}, ${note}, ${nowLiteral}, ${actor}, NULL)
+VALUES (${sqlString(email)}, ${sqlString(slug)}, ${note}, ${NOW_SECONDS}, ${actor}, NULL)
 ON CONFLICT(email) DO UPDATE SET
 	tier_slug = excluded.tier_slug,
 	note = excluded.note,
@@ -225,7 +217,7 @@ ON CONFLICT(email) DO UPDATE SET
 	granted_by = excluded.granted_by,
 	revoked_at = NULL;
 INSERT INTO audit_log (id, at, actor, action, target, detail, ip_prefix)
-VALUES (${auditId()}, ${nowLiteral}, ${actor}, 'grant', ${sqlString(email)},
+VALUES (${auditId()}, ${NOW_SECONDS}, ${actor}, 'grant', ${sqlString(email)},
 	json_object('tier', ${sqlString(slug)}, 'rank', ${tier.rank}), NULL);
 SELECT email, tier_slug, note, granted_at, granted_by, revoked_at FROM access_grant WHERE email = ${sqlString(email)};`,
 		flags
@@ -242,7 +234,7 @@ function revoke(positional, flags) {
 	if (!rawEmail) fail(`revoke needs an email.\n\n${USAGE}`);
 
 	const email = normaliseEmail(rawEmail);
-	const actor = sqlString(flags.by ?? 'cli');
+	const actor = flags.by ?? 'cli';
 
 	const existing = rowsOf(
 		d1(
@@ -254,21 +246,29 @@ function revoke(positional, flags) {
 		fail(`${email} has no active grant, so there is nothing to revoke.`);
 	}
 
+	// Counted before the batch, because afterwards there is nothing left to
+	// count. This is only ever printed; nothing branches on it.
+	const [{ n: sessions = 0 } = {}] = rowsOf(d1(countSessionsFor(email), flags));
+
 	d1(
-		`UPDATE access_grant SET revoked_at = ${nowLiteral}
-WHERE email = ${sqlString(email)} AND revoked_at IS NULL;
-INSERT INTO audit_log (id, at, actor, action, target, detail, ip_prefix)
-VALUES (${auditId()}, ${nowLiteral}, ${actor}, 'revoke', ${sqlString(email)},
-	json_object('tier', ${sqlString(existing[0].tier_slug)}), NULL);`,
+		revokeStatements({
+			email,
+			tierSlug: existing[0].tier_slug,
+			actor,
+			auditId: randomUUID()
+		}),
 		flags
 	);
 
 	console.log(`revoked ${email} (was ${existing[0].tier_slug})`);
+	console.log(`ended ${sessions} session${sessions === 1 ? '' : 's'}.`);
 	console.log('audit_log row written.');
-	// The tier is resolved from `access_grant` on every request and nothing
-	// caches it, so this takes effect on their next page load. Deleting their
-	// `session` rows as well — which also forces a re-auth — is M8.1.
-	console.log('Their next request resolves to public. Session rows are untouched until M8.1.');
+	// Both halves, and they are different halves. The grant is re-read from
+	// `access_grant` on every request with nothing caching it, so the 403 lands
+	// on their very next request whatever happens to their session; deleting
+	// the session rows is what stops them continuing on the one they already
+	// hold, and forces a fresh Google sign-in that will then be refused.
+	console.log('Their next request is refused, and the session they held is gone.');
 }
 
 function list(_positional, flags) {
@@ -306,4 +306,14 @@ if (flags.help || !command) {
 const run = COMMANDS[command];
 if (!run) fail(`unknown command "${command}".\n\n${USAGE}`);
 
-run(rest, flags);
+// `sqlString` refuses a value it cannot represent by throwing, because it now
+// lives in a module a test imports and a module that calls `process.exit` is
+// not testable. Turning that back into the one-line failure this CLI has
+// always printed happens here, and only here — anything else is a bug in this
+// file and keeps its stack.
+try {
+	run(rest, flags);
+} catch (cause) {
+	if (!(cause instanceof AccessError)) throw cause;
+	fail(cause.message);
+}

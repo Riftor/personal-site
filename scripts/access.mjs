@@ -16,8 +16,7 @@
  * literal from a fixed allowlist or has been through `sqlString()` below.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -115,11 +114,33 @@ function parseArgs(argv) {
 }
 
 /** Runs one or more statements against D1 and returns the parsed results. */
+/**
+ * `--command`, never `--file`.
+ *
+ * FIXED 2026-08-13. This used to write the SQL to a temp file and pass
+ * `--file`, on the reasoning that a temp file cannot be mangled by shell
+ * quoting. It cannot anyway — `execFileSync` takes an argv array and never
+ * spawns a shell — and `--file` has a behaviour that quietly broke every
+ * remote command:
+ *
+ *   wrangler d1 execute … --remote --file q.sql --json
+ *     -> [{ "results": [{ "Total queries executed": 1, "Rows read": 3, … }] }]
+ *   wrangler d1 execute … --remote --command "…" --json
+ *     -> [{ "results": [{ "email": "…", "tier_slug": "owner", … }] }]
+ *
+ * With `--remote --file`, wrangler *uploads* the statements and reports a
+ * summary instead of the rows. Locally it returns the rows either way, so the
+ * whole class of bug was invisible until the first production command:
+ * `list --remote` printed `undefined -> undefined`, and `grant --remote` was
+ * worse — `requireTierExists` tests `rows.length !== 1`, and the summary IS
+ * one row, so the guard passed and handed back a "tier" whose `rank` was
+ * `undefined`, which then went into the `audit_log` insert as a bare
+ * `undefined` token and failed the batch.
+ *
+ * `--command` accepts the same multi-statement batches and returns one result
+ * object per statement, remote and local alike. Verified against production.
+ */
 function d1(sql, { remote }) {
-	const dir = mkdtempSync(join(tmpdir(), 'personal-site-access-'));
-	const file = join(dir, 'statement.sql');
-	writeFileSync(file, sql);
-
 	try {
 		const args = [
 			'd1',
@@ -127,8 +148,8 @@ function d1(sql, { remote }) {
 			DATABASE,
 			remote ? '--remote' : '--local',
 			'--json',
-			'--file',
-			file
+			'--command',
+			sql
 		];
 		const stdout = execFileSync(WRANGLER, args, {
 			cwd: REPO_ROOT,
@@ -138,12 +159,22 @@ function d1(sql, { remote }) {
 		// `--json` still prints wrangler's banner on some versions; take the JSON.
 		const start = stdout.indexOf('[');
 		if (start === -1) fail(`could not parse wrangler output:\n${stdout}`);
-		return JSON.parse(stdout.slice(start));
+		const parsed = JSON.parse(stdout.slice(start));
+
+		// The shape this function exists to avoid. If a future wrangler returns
+		// the upload summary from `--command` too, stop rather than report
+		// `undefined` as though it were data.
+		if (parsed[0]?.results?.[0] && 'Total queries executed' in parsed[0].results[0]) {
+			fail(
+				'wrangler returned a batch summary instead of rows, so nothing below could be\n' +
+					'trusted. See the comment above `d1()` in this file.'
+			);
+		}
+
+		return parsed;
 	} catch (cause) {
 		if (cause instanceof SyntaxError) throw cause;
 		fail(`wrangler d1 execute failed. ${cause.message}`);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
 	}
 }
 

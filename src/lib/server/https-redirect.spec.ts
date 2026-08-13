@@ -1,51 +1,152 @@
 import { describe, expect, it } from 'vitest';
-import { httpsRedirectTarget, isLoopbackHostname } from './https-redirect';
+import { httpsTransportFor, isLoopbackHostname } from './https-redirect';
 
-const target = (href: string) => httpsRedirectTarget(new URL(href));
+/**
+ * Plan §8.7, after the M8 review.
+ *
+ * The first version of this built the redirect out of the request's own `Host`
+ * header, so `curl -H 'Host: attacker.example'` was answered with a 301 to
+ * `attacker.example` — an open redirect on the pre-auth hop the whole layer
+ * exists to protect. Most of what is below is that bug, pinned.
+ *
+ * What these cannot see is the scheme on the wire: `pnpm preview` runs under
+ * `wrangler dev`, which rewrites the request's own origin across every
+ * response header it emits. That is `e2e/https-redirect.spec.ts`'s job, and it
+ * has to stand up its own server to do it.
+ */
 
-describe('httpsRedirectTarget', () => {
-	it('sends a plain-HTTP request for the real site to HTTPS', () => {
+const SITE = 'https://cadenedam.com';
+
+const decide = (href: string, configured: unknown = SITE) =>
+	httpsTransportFor(new URL(href), configured);
+
+describe('httpsTransportFor', () => {
+	it('sends a cleartext request for this site to HTTPS', () => {
 		// The finding this exists for: `http://cadenedam.com/` served the whole
 		// site in cleartext.
-		expect(target('http://cadenedam.com/')).toBe('https://cadenedam.com/');
+		expect(decide('http://cadenedam.com/')).toEqual({
+			action: 'redirect',
+			location: 'https://cadenedam.com/'
+		});
 	});
 
 	it('keeps the path and the query, so a bookmark still lands', () => {
-		expect(target('http://cadenedam.com/private/photos?page=2')).toBe(
-			'https://cadenedam.com/private/photos?page=2'
-		);
-		expect(target('http://cadenedam.com/signin?next=%2Fprivate%2Fnow')).toBe(
-			'https://cadenedam.com/signin?next=%2Fprivate%2Fnow'
-		);
+		expect(decide('http://cadenedam.com/private/photos?page=2')).toEqual({
+			action: 'redirect',
+			location: 'https://cadenedam.com/private/photos?page=2'
+		});
+		expect(decide('http://cadenedam.com/signin?next=%2Fprivate%2Fnow')).toEqual({
+			action: 'redirect',
+			location: 'https://cadenedam.com/signin?next=%2Fprivate%2Fnow'
+		});
 	});
 
 	it('drops the port, which spoke the other protocol', () => {
-		expect(target('http://cadenedam.com:80/work')).toBe('https://cadenedam.com/work');
+		expect(decide('http://cadenedam.com:8080/work')).toEqual({
+			action: 'redirect',
+			location: 'https://cadenedam.com/work'
+		});
 	});
 
-	it('leaves an HTTPS request alone', () => {
-		expect(target('https://cadenedam.com/private/now')).toBeNull();
+	it('serves an HTTPS request untouched', () => {
+		expect(decide('https://cadenedam.com/private/now')).toEqual({ action: 'serve' });
+		// Including one whose host is not the configured site: the transport is
+		// already secure, so this layer has no opinion left to have.
+		expect(decide('https://anything.example/')).toEqual({ action: 'serve' });
 	});
 
-	// Every e2e test in the suite runs against `http://localhost:4173`, and
-	// `pnpm dev` is plain HTTP on :5173. Redirecting either would be a loop
-	// into a port nothing is listening on.
+	/* ---------------------------------------------------------------- *
+	 * The open redirect, and every shape of it.
+	 * ---------------------------------------------------------------- */
+
+	it('refuses a hostname that is not this site, and names it nowhere', () => {
+		const decision = decide('http://attacker.example/private/photos');
+
+		expect(decision).toEqual({ action: 'refuse' });
+		// Belt and braces on the property that matters: there is no `location`
+		// on a refusal at all, so there is nothing to leak the host into.
+		expect(JSON.stringify(decision)).not.toContain('attacker.example');
+	});
+
+	it('refuses a hostname that merely looks like this site', () => {
+		// Every one of these would have been redirected to itself by a check
+		// that only asked "is this loopback?".
+		for (const host of [
+			'attacker.example',
+			'cadenedam.com.evil.example',
+			'evil-cadenedam.com',
+			'wwwcadenedam.com',
+			'localhost.evil.example',
+			'127.0.0.1.evil.example',
+			'notlocalhost'
+		]) {
+			expect(decide(`http://${host}/signin`), host).toEqual({ action: 'refuse' });
+		}
+	});
+
+	it('refuses a subdomain, because the allowlist is one hostname and not a suffix', () => {
+		// `www.cadenedam.com` is not what `BETTER_AUTH_URL` names. If it should
+		// be served, it belongs in that variable, not in a pattern here.
+		expect(decide('http://www.cadenedam.com/')).toEqual({ action: 'refuse' });
+	});
+
+	it('refuses rather than guesses when the site does not know its own origin', () => {
+		// No configured origin means no hostname this site can prove is its
+		// own. Failing closed here only ever affects a cleartext request to a
+		// non-loopback name, which is the request that should not be served.
+		// Called directly rather than through `decide`, whose default argument
+		// would swallow the `undefined` case this most needs to cover.
+		for (const bad of [undefined, null, '', '   ', 'not a url', 'https://', 42, {}]) {
+			expect(httpsTransportFor(new URL('http://cadenedam.com/'), bad), JSON.stringify(bad)).toEqual(
+				{ action: 'refuse' }
+			);
+		}
+	});
+
+	it('matches the hostname case-insensitively, the way a host is', () => {
+		expect(decide('http://CADENEDAM.com/')).toEqual({
+			action: 'redirect',
+			location: 'https://cadenedam.com/'
+		});
+		expect(decide('http://cadenedam.com/', 'https://CadenEdam.COM')).toMatchObject({
+			action: 'redirect'
+		});
+	});
+
+	it('reads only the hostname out of the configured origin', () => {
+		// The port and path of `BETTER_AUTH_URL` are none of this function's
+		// business; the site is served on the default HTTPS port.
+		expect(decide('http://cadenedam.com/work', 'http://cadenedam.com:5173/base')).toEqual({
+			action: 'redirect',
+			location: 'https://cadenedam.com/work'
+		});
+	});
+
+	/* ---------------------------------------------------------------- *
+	 * Loopback, which every other test in the repo depends on.
+	 * ---------------------------------------------------------------- */
+
 	it.each([
 		'http://localhost:4173/private/photos',
 		'http://localhost:5173/',
 		'http://127.0.0.1:4173/signin',
 		'http://127.0.0.2:4173/',
 		'http://[::1]:4173/'
-	])('leaves %s alone, because it is this machine', (href) => {
-		expect(target(href)).toBeNull();
+	])('serves %s, because it is this machine', (href) => {
+		// `pnpm dev` and `pnpm preview` are both plain HTTP. Redirecting these
+		// would be a loop; refusing them would be 91 failing e2e tests.
+		expect(decide(href)).toEqual({ action: 'serve' });
 	});
 
-	it('is not fooled by a hostname that merely contains a loopback name', () => {
-		// `localhost.evil.example` resolves off-box; a suffix or substring test
-		// would have handed it the exemption.
-		expect(target('http://localhost.evil.example/')).toBe('https://localhost.evil.example/');
-		expect(target('http://notlocalhost/')).toBe('https://notlocalhost/');
-		expect(target('http://127.0.0.1.evil.example/')).toBe('https://127.0.0.1.evil.example/');
+	it('serves loopback even when the configured origin is missing or elsewhere', () => {
+		// The exemption is checked before the allowlist on purpose: local
+		// development must not depend on what `BETTER_AUTH_URL` happens to say.
+		expect(httpsTransportFor(new URL('http://localhost:4173/'), undefined)).toEqual({
+			action: 'serve'
+		});
+		expect(decide('http://localhost:4173/', 'https://somewhere.else.example')).toEqual({
+			action: 'serve'
+		});
 	});
 });
 

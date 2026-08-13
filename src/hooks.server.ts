@@ -4,7 +4,7 @@ import { requiredRankFor } from '$lib/server/access/routes';
 import { resolveViewer } from '$lib/server/access/viewer';
 import { recordDenial } from '$lib/server/audit';
 import { PUBLIC_TIER_RANK } from '$lib/server/db/schema';
-import { httpsRedirectTarget } from '$lib/server/https-redirect';
+import { httpsTransportFor } from '$lib/server/https-redirect';
 import { applySecurityHeaders } from '$lib/server/security-headers';
 
 /**
@@ -12,9 +12,12 @@ import { applySecurityHeaders } from '$lib/server/security-headers';
  * way around it, which is the property that picked SvelteKit for this site
  * (plan §1). It does four things, in this order:
  *
- *  0. Sends a cleartext request for the real site to HTTPS, before anything
- *     else happens — see `$lib/server/https-redirect` for why the Cloudflare
- *     zone setting is not enough on its own.
+ *  0. Answers the transport question before anything else happens: a cleartext
+ *     request for this site's own hostname is 301'd to HTTPS, one naming any
+ *     other hostname is refused with a bare 400, and loopback is served as it
+ *     arrived. See `$lib/server/https-redirect` for why the Cloudflare zone
+ *     setting is not enough on its own, and why the destination is an
+ *     allowlist rather than the request's own `Host`.
  *  1. Resolves `locals.viewer` — session, then live grant, then tier — so
  *     every loader downstream has an answer without repeating the query.
  *  2. Turns a signed-out request for a private path straight back at the door,
@@ -47,17 +50,40 @@ import { applySecurityHeaders } from '$lib/server/security-headers';
  * the `Set-Cookie` headers Kit merges in afterwards and turn a form-action
  * redirect into the wrong shape, which is a poor trade for headers on a
  * body-less, same-origin 302: there is nothing to frame, nothing to script,
- * and the `/signin` page it lands on one hop later sends all of them. The 301
- * in step 0 escapes it for the same reason, and wants it least of all — HSTS is
- * invalid on an HTTP response by definition.
+ * and the `/signin` page it lands on one hop later sends all of them. Step 0's
+ * two answers do *not* escape it — they are built here rather than thrown, so
+ * there is a seam to stamp — though HSTS is not among what they get, because
+ * `applySecurityHeaders` sends it only over HTTPS and both are answers to a
+ * cleartext request.
  */
 export const handle: Handle = async ({ event, resolve }) => {
 	// Before the viewer, before `resolve`, before any query. A request that is
 	// about to be discarded is not worth a round trip to D1, and a redirect
 	// issued after the session cookie has already been read is a redirect that
 	// arrived too late to have protected it.
-	const secureURL = httpsRedirectTarget(event.url);
-	if (secureURL) redirect(301, secureURL);
+	//
+	// The response is built here rather than thrown through `redirect()`, so
+	// that what goes on the wire is a `Location` this file wrote and nothing
+	// else had an opinion about. The 400 carries no body worth reading and
+	// above all does not name the host it refused: see `https-redirect.ts`.
+	const transport = httpsTransportFor(event.url, event.platform?.env?.BETTER_AUTH_URL);
+
+	if (transport.action === 'redirect') {
+		return applySecurityHeaders(
+			new Response(null, { status: 301, headers: { location: transport.location } }),
+			event.url
+		);
+	}
+
+	if (transport.action === 'refuse') {
+		return applySecurityHeaders(
+			new Response('400 Bad Request\n', {
+				status: 400,
+				headers: { 'content-type': 'text/plain; charset=utf-8' }
+			}),
+			event.url
+		);
+	}
 
 	const viewer = await resolveViewer(event);
 	event.locals.viewer = viewer;

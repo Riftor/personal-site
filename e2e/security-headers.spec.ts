@@ -1,4 +1,3 @@
-import { request as httpRequest } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
@@ -78,33 +77,6 @@ function expectStampedHeaders(headers: Record<string, string>, where: string) {
 
 	// The header is sent once, not once per layer of the stack.
 	expect(headers['x-content-type-options'], `${where}: duplicated nosniff`).not.toContain(',');
-}
-
-/**
- * One request to the preview server with a `Host` header of our choosing,
- * through `node:http` rather than Playwright.
- *
- * The Worker builds `event.url` from `Host`, so this is how a request that
- * looks like it arrived at `cadenedam.com` — rather than at `localhost` — can
- * be made against a server bound to a loopback port. Playwright's request
- * context manages `Host` itself and will not be told otherwise, which is why
- * these three tests drop to the raw client.
- */
-const PREVIEW_PORT = 4173; // `playwright.config.ts`, and `pnpm preview`.
-
-function getWithHost(host: string, path: string) {
-	return new Promise<{ status: number; location: string | undefined }>((resolve, reject) => {
-		const req = httpRequest(
-			{ host: '127.0.0.1', port: PREVIEW_PORT, path, method: 'GET', headers: { host } },
-			(res) => {
-				res.resume();
-				resolve({ status: res.statusCode ?? 0, location: res.headers.location });
-			}
-		);
-
-		req.on('error', reject);
-		req.end();
-	});
 }
 
 /** Collects anything the browser refused, so a violation fails the test. */
@@ -188,63 +160,6 @@ test('the signed-out redirect still redirects, and /signin carries the headers',
 	const signin = await request.get('/signin');
 	expect(signin.status()).toBe(200);
 	expectStampedHeaders(signin.headers(), '/signin');
-});
-
-/* ------------------------------------------------------------------ *
- * HTTP -> HTTPS (plan §8.7).
- * ------------------------------------------------------------------ */
-
-/**
- * What these can and cannot prove, stated once.
- *
- * They prove the half that matters here: that `handle` distinguishes a request
- * addressed to the real site from one addressed to this machine, and turns the
- * first into a 301 before it does anything else. They cannot prove the target
- * is `https://`, because **`wrangler dev` rewrites a same-host `Location` back
- * to the local scheme** — a `Location: https://cadenedam.com/…` set by the
- * Worker arrives at the client as `http://cadenedam.com/…`. Confirmed by
- * running a twelve-line worker that hard-codes the string; the local proxy
- * rewrote it there too. The scheme is therefore pinned in
- * `src/lib/server/https-redirect.spec.ts`, where nothing is between the
- * function and the assertion.
- *
- * The same probe turned up why that function assembles the URL by hand:
- * workerd's `URL` silently ignores `url.protocol = 'https:'` on an `http:` URL,
- * so the obvious implementation redirected cleartext to cleartext.
- */
-test('a request addressed to the real site over HTTP is redirected, permanently', async () => {
-	const home = await getWithHost('cadenedam.com', '/');
-	expect(home.status).toBe(301);
-
-	// Before the viewer is resolved: a private path is redirected as the
-	// public one is, rather than being sent to `/signin` over cleartext.
-	const priv = await getWithHost('cadenedam.com', '/private/photos');
-	expect(priv.status).toBe(301);
-	expect(priv.location).toContain('/private/photos');
-
-	// The query survives, so a `?next=` still means something after the hop.
-	const signin = await getWithHost('cadenedam.com', '/signin?next=%2Fprivate%2Fnow');
-	expect(signin.status).toBe(301);
-	expect(signin.location).toContain('next=%2Fprivate%2Fnow');
-});
-
-test('a request to this machine over HTTP is served, not redirected', async () => {
-	// The other half, and the reason the condition is on the hostname rather
-	// than the protocol: `pnpm dev` and `pnpm preview` are both plain HTTP, and
-	// every other test in this suite would be a redirect loop otherwise.
-	expect((await getWithHost(`localhost:${PREVIEW_PORT}`, '/')).status).toBe(200);
-	expect((await getWithHost(`127.0.0.1:${PREVIEW_PORT}`, '/')).status).toBe(200);
-
-	// Still the signed-out 302 to `/signin`, unchanged by any of this.
-	const priv = await getWithHost(`localhost:${PREVIEW_PORT}`, '/private/photos');
-	expect(priv.status).toBe(302);
-	expect(priv.location).toContain('/signin');
-});
-
-test('a hostname that merely looks local is redirected', async () => {
-	// `localhost.evil.example` resolves off-box. A suffix or substring test
-	// would have handed it the exemption.
-	expect((await getWithHost('localhost.evil.example', '/')).status).toBe(301);
 });
 
 /* ------------------------------------------------------------------ *

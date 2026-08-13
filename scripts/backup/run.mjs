@@ -33,6 +33,7 @@ import {
 	assertOutsideRepo,
 	BackupError,
 	backupKey,
+	backupTimeOf,
 	BUCKET,
 	DEFAULT_KEEP,
 	fail,
@@ -215,7 +216,28 @@ async function main() {
 		writeFileSync(dump, exportDump(dir, remote));
 
 		const bytes = statSync(dump).size;
-		const doomed = selectForDeletion([...existing, key], { keep });
+
+		// `protect` is the backup this run just made. Without it a clock that
+		// is behind — an NTP correction, a resumed VM — names the fresh key
+		// earlier than keys already in the manifest, and the prune deletes it
+		// in the same run that uploaded it, logging success either way. See the
+		// review finding above `selectForDeletion`.
+		const doomed = selectForDeletion([...existing, key], { keep, protect: key });
+
+		// Protecting it stops the loss, but does not fix the cause: the next
+		// run would rank it old again and the window would stop advancing
+		// without ever failing. So say it out loud.
+		const newestExisting = existing.reduce(
+			(latest, old) => Math.max(latest, backupTimeOf(old) ?? 0),
+			0
+		);
+		if (newestExisting > (backupTimeOf(key) ?? 0)) {
+			console.error(
+				`backup: WARNING — ${key} is named earlier than a backup already in the bucket, ` +
+					`so this machine's clock is behind. The new backup is kept, but check the clock: ` +
+					`while it stays wrong, each run's backup is the first candidate for deletion.`
+			);
+		}
 
 		if (dryRun) {
 			console.error(`backup: would upload ${key} (${bytes} bytes) to ${BUCKET}`);

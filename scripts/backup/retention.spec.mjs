@@ -141,6 +141,45 @@ describe('selectForDeletion', () => {
 	it('deletes nothing when there is nothing to delete', () => {
 		expect(selectForDeletion([], { keep: DEFAULT_KEEP })).toEqual([]);
 	});
+
+	it('never returns the protected key, however old its name looks', () => {
+		// The M8.3 review's finding. A clock behind by years names the fresh
+		// backup earlier than everything already in the bucket, so it sorts
+		// straight into the doomed set and `run.mjs` deletes the object it just
+		// uploaded — logging "uploaded" and "pruned" and exiting 0 either way.
+		const skewed = backupKey(Date.UTC(2020, 0, 1));
+		const real = backupKey(Date.UTC(2026, 7, 13, 21, 8, 8));
+
+		expect(selectForDeletion([real, skewed], { keep: 1 })).toEqual([skewed]);
+		expect(selectForDeletion([real, skewed], { keep: 1, protect: skewed })).toEqual([]);
+	});
+
+	it('spares the protected key without promoting an older one in its place', () => {
+		// Sparing it keeps one more object than `keep` asks for. It must not
+		// instead retain `keep` by pulling the next-oldest into the window.
+		// `keys()` is oldest first, so `all[0]` is the one furthest out of the
+		// window and squarely in the doomed set.
+		const all = keys(5);
+		const oldest = all[0];
+
+		expect(selectForDeletion(all, { keep: 2 })).toContain(oldest);
+		expect(selectForDeletion(all, { keep: 2, protect: oldest })).not.toContain(oldest);
+		expect(selectForDeletion(all, { keep: 2, protect: oldest })).toEqual(
+			selectForDeletion(all, { keep: 2 }).filter((key) => key !== oldest)
+		);
+	});
+
+	it('protecting a key that is being retained anyway changes nothing', () => {
+		// The ordinary case: the clock was right, so the fresh key is the
+		// newest and was never a candidate. `keys()` is oldest first.
+		const all = keys(5);
+		const newest = all[all.length - 1];
+
+		expect(selectForDeletion(all, { keep: 3 })).not.toContain(newest);
+		expect(selectForDeletion(all, { keep: 3, protect: newest })).toEqual(
+			selectForDeletion(all, { keep: 3 })
+		);
+	});
 });
 
 describe('parseManifest', () => {
@@ -185,5 +224,21 @@ describe('assertOutsideRepo', () => {
 
 	it('is not fooled by a sibling directory sharing the prefix', () => {
 		expect(assertOutsideRepo('/repo-backups/d1.sql', '/repo')).toBe('/repo-backups/d1.sql');
+	});
+
+	it('resolves the path before judging it, so `..` cannot walk back in', () => {
+		// The M8.3 review's second finding: the check compared the strings as
+		// given, so a path that *resolves* inside the repo but is not spelled
+		// that way was handed back rather than refused. No caller passes one
+		// today; the guard is here for the one that eventually does, and a
+		// check narrower than its own docstring is worse than none because it
+		// reads as covered.
+		for (const path of [
+			'/tmp/x/../../repo/d1.sql',
+			'/repo/sub/../d1.sql',
+			'/repo/./.svelte-kit/d1.sql'
+		]) {
+			expect(() => assertOutsideRepo(path, '/repo'), path).toThrow(BackupError);
+		}
 	});
 });

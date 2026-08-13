@@ -18,6 +18,7 @@
  *    Treating a corrupt manifest as empty would silently orphan every previous
  *    backup, which looks exactly like success.
  */
+import { resolve } from 'node:path';
 
 /** The CLI turns this into one line; anything else keeps its stack. */
 export class BackupError extends Error {}
@@ -106,8 +107,28 @@ export function backupTimeOf(key) {
  *
  * Returned oldest first, so a run that hits `max` removes the least useful
  * objects and leaves the rest for next time.
+ *
+ * `protect` is never returned, whatever its position in the ordering.
+ *
+ * REVIEW FINDING 2026-08-13, fixed here. Selection ranks purely on the instant
+ * encoded in the key's *name*, and `run.mjs` passes the key it is about to
+ * upload in with the rest. So if the clock is behind when a backup runs — an
+ * NTP correction, a VM resumed from a snapshot, a machine that boots without a
+ * battery-backed clock — the fresh key encodes a time older than backups
+ * already in the manifest, sorts into the doomed set, and is deleted in the
+ * same run that created it. The run then logs "uploaded" and "pruned" and
+ * exits 0, so a cron log reads as perfectly healthy while that night's backup
+ * was destroyed on arrival and the window quietly stopped advancing.
+ *
+ * Ranking on the key name is still right — it is the only ordering a restorer
+ * can reconstruct from the bucket alone, and object mtimes move when objects
+ * are copied. The fix is to exempt the one key the caller knows it just wrote
+ * rather than to trust the clock that named it.
  */
-export function selectForDeletion(keys, { keep = DEFAULT_KEEP, max = MAX_DELETES_PER_RUN } = {}) {
+export function selectForDeletion(
+	keys,
+	{ keep = DEFAULT_KEEP, max = MAX_DELETES_PER_RUN, protect = null } = {}
+) {
 	// A keep of 0 would delete the backup the caller just uploaded. There is no
 	// reading of "keep none" that is a backup policy.
 	if (!Number.isInteger(keep) || keep < 1) fail(`--keep must be a whole number of 1 or more.`);
@@ -120,11 +141,17 @@ export function selectForDeletion(keys, { keep = DEFAULT_KEEP, max = MAX_DELETES
 		// keeps the result deterministic if two ever collide.
 		.sort((a, b) => b.at - a.at || b.key.localeCompare(a.key));
 
-	return dated
-		.slice(keep)
-		.map((entry) => entry.key)
-		.reverse()
-		.slice(0, max);
+	return (
+		dated
+			.slice(keep)
+			.map((entry) => entry.key)
+			// After the slice, not before: sparing `protect` should keep one more
+			// object than `keep` asks for, never promote an older one into the
+			// window to take its place.
+			.filter((key) => key !== protect)
+			.reverse()
+			.slice(0, max)
+	);
 }
 
 /** The manifest body to upload for `keys`, newest first so it reads usefully. */
@@ -164,8 +191,19 @@ export function parseManifest(text) {
  * pointed at a file nobody would think to look for.
  */
 export function assertOutsideRepo(path, repoRoot) {
-	const normalised = String(path).replaceAll('\\', '/').replace(/\/+$/, '');
-	const root = String(repoRoot).replaceAll('\\', '/').replace(/\/+$/, '');
+	// REVIEW FINDING 2026-08-13: this compared the strings as given, so a path
+	// that *resolves* inside the repo but is not spelled that way sailed
+	// through — `/tmp/x/../../repo/dump.sql` against `/repo` returned rather
+	// than failed. No caller passes such a path today, but the guard's whole
+	// point is to hold for the one that eventually does, and a check narrower
+	// than its own docstring is worse than none: it reads as covered.
+	//
+	// `resolve` collapses `..` and makes a relative path absolute against cwd.
+	// It does not follow symlinks — a symlinked TMPDIR pointing into the repo
+	// would still pass — which is why the dump is also written into a fresh
+	// `mkdtemp` directory rather than a path from the environment.
+	const normalised = resolve(String(path)).replaceAll('\\', '/').replace(/\/+$/, '');
+	const root = resolve(String(repoRoot)).replaceAll('\\', '/').replace(/\/+$/, '');
 	if (normalised === root || normalised.startsWith(`${root}/`)) {
 		fail(`refusing to write a database dump inside the repository: ${path}`);
 	}

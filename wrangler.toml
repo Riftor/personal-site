@@ -63,9 +63,15 @@ directory = ".svelte-kit/cloudflare"
 # The first `--remote` command against the placeholder fails rather than
 # writing somewhere unexpected, which is the point of leaving it obviously wrong.
 [[d1_databases]]
+# The binding NAME is what the code reads (`platform.env.DB`) and is unrelated
+# to the database's name in the Cloudflare account. `wrangler d1 create` prints
+# a suggested block whose binding is derived from the database name — pasting
+# that verbatim renames the binding to `personal_site` and breaks every query
+# in the Worker. It did exactly that on 2026-08-13; `pnpm check` caught it with
+# 13 "Property 'DB' does not exist on type 'Env'" errors. Keep this as `DB`.
 binding = "DB"
 database_name = "personal-site"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "fdf61f90-fa7c-41d8-9477-7c336ead97dd"
 migrations_dir = "drizzle"
 
 # Calendar cache warmers (plan §4). Two schedules, not one: the 30- and 90-day
@@ -88,5 +94,7 @@ crons = ["*/15 * * * *", "0 * * * *"]
 # the tier re-check on `/m/[assetId]/[variant]` becomes advisory. M7.2's
 # done-condition is `wrangler r2 bucket info personal-site-media` confirming it.
 [[r2_buckets]]
+# As with D1 above: the binding name is what `+server.ts` reads
+# (`platform.env.MEDIA`), not the bucket's name in the account. Keep it `MEDIA`.
 binding = "MEDIA"
 bucket_name = "personal-site-media"

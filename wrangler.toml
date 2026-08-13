@@ -7,16 +7,61 @@ compatibility_date = "2026-08-08"
 # Worker fails to start with `No such module "node:crypto"`. Needs a
 # compatibility_date of 2024-09-23 or later, which the date above satisfies.
 compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# NOTHING SECRET GOES IN THIS FILE. The repo is public, and a value written
+# here is committed. Production secrets are set once, per name, with
+#
+#   wrangler secret put GOOGLE_CLIENT_ID
+#   wrangler secret put GOOGLE_CLIENT_SECRET
+#   wrangler secret put BETTER_AUTH_SECRET
+#   wrangler secret put BETTER_AUTH_URL          # https://<the M7.1 domain>
+#   wrangler secret put GOOGLE_SA_EMAIL
+#   wrangler secret put GOOGLE_SA_PRIVATE_KEY    # the whole PEM, newlines and all
+#   wrangler secret put CALENDAR_ID
+#
+# which is the same list `.dev.vars.example` documents for local dev. There is
+# no `[vars]` block below and there should never be one.
+# ---------------------------------------------------------------------------
+
+# `*.workers.dev` and per-version preview URLs are a second and third origin
+# serving the same Worker — including the private half. They earn their keep
+# only until M7.1 buys a domain: sign-in does not work on them anyway, because
+# `BETTER_AUTH_URL` and Google's authorised redirect URI both name the real
+# host. Set both to `false` in the same change that adds the route below, so
+# there is exactly one way in.
 workers_dev = true
 preview_urls = true
+
+# The custom domain, once M7.1 has bought one and added it to the account.
+# `custom_domain = true` makes Cloudflare provision the DNS record and the
+# certificate; it does not need a `zone_id`. Uncomment and fill in the host —
+# and remember the same host has to be added to the Google OAuth client as an
+# authorised redirect URI (M7.3) or sign-in 400s.
+#
+# [[routes]]
+# pattern = "PLACEHOLDER.example"   # the domain bought in M7.1
+# custom_domain = true
 
 [assets]
 binding = "ASSETS"
 directory = ".svelte-kit/cloudflare"
 
-# D1. `database_id` is a placeholder until a real Cloudflare account exists —
-# local dev (`wrangler dev`, `wrangler d1 execute --local`) keys off `database_name`
-# and never reads it. Replace it before the first `--remote` command.
+# D1.
+#
+# `database_id` below is the nil UUID — a PLACEHOLDER, not a real database, and
+# not a guess at what the real one will look like. Local dev (`wrangler dev`,
+# `wrangler d1 execute --local`, `pnpm db:apply`) keys off `database_name` and
+# never reads it, which is why the project has got this far without one.
+#
+#   wrangler d1 create personal-site
+#
+# prints the real id; paste it here, then apply the migrations remotely with
+#
+#   wrangler d1 migrations apply personal-site --remote
+#
+# The first `--remote` command against the placeholder fails rather than
+# writing somewhere unexpected, which is the point of leaving it obviously wrong.
 [[d1_databases]]
 binding = "DB"
 database_name = "personal-site"
@@ -32,8 +77,16 @@ migrations_dir = "drizzle"
 [triggers]
 crons = ["*/15 * * * *", "0 * * * *"]
 
-# R2. The local bucket is simulated by wrangler; the remote one is not created yet.
-# It must never get an r2.dev public URL or a custom domain — see plan §5.
+# R2. The local bucket is simulated by wrangler; the remote one is not created
+# yet. A bucket is addressed by name, so there is no id to fill in here —
+#
+#   wrangler r2 bucket create personal-site-media
+#
+# is the whole of it. What matters is what is NOT done afterwards: the bucket
+# must never get an r2.dev public URL and never a custom domain (plan §5).
+# Either one puts the bytes on the internet at a URL the Worker never sees, and
+# the tier re-check on `/m/[assetId]/[variant]` becomes advisory. M7.2's
+# done-condition is `wrangler r2 bucket info personal-site-media` confirming it.
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "personal-site-media"

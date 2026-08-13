@@ -3,6 +3,7 @@ import { signinRedirectTarget } from '$lib/server/access/guard';
 import { requiredRankFor } from '$lib/server/access/routes';
 import { resolveViewer } from '$lib/server/access/viewer';
 import { PUBLIC_TIER_RANK } from '$lib/server/db/schema';
+import { applySecurityHeaders } from '$lib/server/security-headers';
 
 /**
  * The one choke point. `handle` runs before every server-side route with no
@@ -29,6 +30,19 @@ import { PUBLIC_TIER_RANK } from '$lib/server/db/schema';
  * from `access_grant` on every request, and nothing about the viewer is ever
  * written to a cookie; that is what makes `pnpm access:revoke` take effect on
  * the next page load rather than in thirty days.
+ *
+ * It also stamps the security headers (plan §7.4) on the way out — every
+ * response, page or media or refusal. The CSP is not among them: it is
+ * `kit.csp` in `vite.config.ts`, because only Kit can nonce the script it
+ * emits. See `$lib/server/security-headers` for the reasoning on each header.
+ *
+ * **One response escapes the stamp: the signed-out 302 below.** `redirect()`
+ * throws, and Kit builds that response itself after `handle` has returned, so
+ * there is no seam to reach it through. Rebuilding it here by hand would drop
+ * the `Set-Cookie` headers Kit merges in afterwards and turn a form-action
+ * redirect into the wrong shape, which is a poor trade for headers on a
+ * body-less, same-origin 302: there is nothing to frame, nothing to script,
+ * and the `/signin` page it lands on one hop later sends all of them.
  */
 export const handle: Handle = async ({ event, resolve }) => {
 	const viewer = await resolveViewer(event);
@@ -64,10 +78,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 			`access: ${event.url.pathname} returned ${response.status} to rank ${viewer.rank} ` +
 				`(the route table requires ${required}). Refused by the hook instead.`
 		);
-		return refuse();
+		return applySecurityHeaders(refuse(), event.url);
 	}
 
-	return response;
+	return applySecurityHeaders(response, event.url);
 };
 
 /**

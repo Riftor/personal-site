@@ -25,6 +25,7 @@
 		"access:grant": "node scripts/access.mjs grant",
 		"access:revoke": "node scripts/access.mjs revoke",
 		"access:list": "node scripts/access.mjs list",
+		"backup": "node scripts/backup/run.mjs",
 		"test:seed": "node scripts/seed-e2e-access.mjs",
 		"test:seed:media": "node scripts/seed-e2e-media.mjs",
 		"test:seed:content": "node scripts/seed-e2e-content.mjs",

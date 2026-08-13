@@ -89,9 +89,22 @@ export default defineConfig({
 
 					// `accounts.google.com` is the Google sign-in hop. The form
 					// on `/signin` posts same-origin to `/signin/google`, which
-					// answers 302 to Google's authorize endpoint — and Firefox
-					// enforces `form-action` across that redirect (Chrome does
-					// not), so `'self'` alone breaks sign-in in Firefox only.
+					// answers 302 to Google's authorize endpoint, and
+					// `form-action` is enforced across that redirect — so
+					// `'self'` alone breaks sign-in.
+					//
+					// **Do not remove this entry, and do not trust a Chrome-only
+					// check that says it is unnecessary.** An earlier version of
+					// this comment claimed the enforcement was Firefox-only.
+					// That was true once and is not any more: Chromium adopted
+					// it in crbug 1359351 (~Chrome 130), and the M7.4 review
+					// confirmed by execution that current Chromium and Firefox
+					// both block the redirect without this entry and both
+					// succeed with it. Nothing in the suite would catch the
+					// removal either — `e2e/signin.spec.ts` drives the hop
+					// through an API request context, which does not enforce
+					// CSP at all, and says so in its own header comment.
+					//
 					// This is the *destination of a top-level navigation*, not
 					// a fetch and not a frame: Google needs no `connect-src`
 					// and no `frame-src` entry. Better Auth's own POSTs to

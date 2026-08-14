@@ -92,7 +92,9 @@
 	<footer class="colophon">
 		<div class="shell colophon__inner">
 			<p>&copy; {year} Caden</p>
-			<p class="colophon__note">[PLACEHOLDER] — links to wherever you want to be found.</p>
+			<p class="colophon__note">
+				<a href="mailto:cadenedam@gmail.com">cadenedam@gmail.com</a>
+			</p>
 		</div>
 	</footer>
 </div>
@@ -124,37 +126,49 @@
 		padding-block: var(--space-md);
 	}
 
+	/* The one piece of branding on the site, so it gets the display face at a
+	   size the nav beside it does not compete with. */
 	.wordmark {
 		color: var(--color-ink);
-		font-size: var(--text-lg);
-		font-weight: 620;
+		font-family: var(--font-display);
+		font-size: var(--text-xl);
+		font-weight: 600;
 		letter-spacing: var(--tracking-tight);
 		text-decoration: none;
+	}
+
+	.wordmark:hover {
+		color: var(--color-accent);
 	}
 
 	.nav {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--space-md);
+		gap: var(--space-md) var(--space-lg);
 		margin: 0;
 		font-size: var(--text-sm);
 	}
 
 	.nav a {
 		display: inline-block;
-		padding-block-end: 2px;
-		border-block-end: 2px solid transparent;
+		padding-block-end: 3px;
+		border-block-end: 1px solid transparent;
 		color: var(--color-ink-muted);
+		font-weight: 500;
 		text-decoration: none;
 	}
 
 	.nav a:hover {
+		border-block-end-color: var(--color-line-strong);
 		color: var(--color-ink);
 	}
 
+	/* The current page is marked by weight and a solid accent rule, so it still
+	   reads when the underline is the only thing hover changes. */
 	.nav a[aria-current='page'] {
 		border-block-end-color: var(--color-accent);
 		color: var(--color-ink);
+		font-weight: 600;
 	}
 
 	/* Marks the private half apart from the portfolio so it is obvious which
@@ -179,14 +193,21 @@
 		white-space: nowrap;
 	}
 
+	/* Sign-in is the only thing in the masthead that starts a flow, so it is the
+	   only thing shaped like a control rather than a link. */
 	.viewer__link {
-		color: var(--color-ink-muted);
+		padding: var(--space-2xs) var(--space-sm);
+		border: 1px solid var(--color-line-strong);
+		border-radius: var(--radius-pill);
+		color: var(--color-ink);
+		font-weight: 550;
 		text-decoration: none;
 	}
 
 	.viewer__link:hover {
-		color: var(--color-ink);
-		text-decoration: underline;
+		border-color: var(--color-accent);
+		background-color: var(--color-accent-wash);
+		color: var(--color-accent-hover);
 	}
 
 	/* Sign-out has to be a form button so it can POST; it is styled to read as
@@ -220,7 +241,15 @@
 		padding-block: var(--space-lg);
 	}
 
-	.colophon__note {
-		color: var(--color-ink-faint);
+	/* Quiet by default — this is the last line on the page, not a call to
+	   action — but unmistakably a link on hover. */
+	.colophon__note a {
+		color: var(--color-ink-muted);
+		text-decoration-color: var(--color-line-strong);
+	}
+
+	.colophon__note a:hover {
+		color: var(--color-accent);
+		text-decoration-color: currentcolor;
 	}
 </style>

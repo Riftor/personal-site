@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ProjectCard from '$lib/components/ProjectCard.svelte';
+	import { formatOccurredOn } from '$lib/content';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -28,18 +28,33 @@
 
 	<section>
 		<h2 class="visually-hidden">Projects</h2>
-		<ul class="project-list" role="list">
+		<!-- One entry per project, read top to bottom, rather than a grid of
+		     summary cards. There are rarely more than a handful of these and the
+		     body is the point of the page, so a card that hides it is a link with
+		     extra steps. -->
+		<ol class="entries" role="list">
 			{#each data.projects as project (project.slug)}
-				<li>
-					<ProjectCard
-						title={project.title}
-						summary={project.summary}
-						occurredOn={project.occurredOn}
-						level={3}
-					/>
+				{@const when = formatOccurredOn(project.occurredOn)}
+				<li class="entry">
+					{#if when}
+						<p class="eyebrow"><time datetime={project.occurredOn}>{when}</time></p>
+					{/if}
+					<h3 class="entry__title">{project.title}</h3>
+					{#if project.summary}
+						<p class="entry__lead">{project.summary}</p>
+					{/if}
+					{#if project.bodyHtml}
+						<!-- `body_html` is rendered from markdown at publish time and stored
+						     in D1. It is trusted-at-publish-time, not sanitised here: Caden is
+						     the only author and nothing user-submitted ever reaches this
+						     column. If that ever stops being true, this is the line that
+						     breaks. -->
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+						<div class="prose entry__body">{@html project.bodyHtml}</div>
+					{/if}
 				</li>
 			{/each}
-		</ul>
+		</ol>
 	</section>
 </div>
 
@@ -49,9 +64,15 @@
 	}
 
 	.lede__summary {
+		max-width: var(--measure-lead);
 		margin-block-start: var(--space-sm);
 		color: var(--color-ink-muted);
 		font-size: var(--text-lg);
+	}
+
+	/* Same reasoning as the home page: summary and intro are one thought. */
+	.lede + .prose {
+		margin-block-start: var(--space-xl);
 	}
 
 	.visually-hidden {
@@ -63,10 +84,41 @@
 		white-space: nowrap;
 	}
 
-	.project-list {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
-		gap: var(--space-md);
+	.entries {
 		margin: 0;
+		padding: 0;
+	}
+
+	/* A hairline between entries and nothing around them: the rule is doing the
+	   separating a card's border and shadow used to, with less furniture. */
+	.entry + .entry {
+		margin-block-start: var(--space-2xl);
+		padding-block-start: var(--space-2xl);
+		border-block-start: 1px solid var(--color-line);
+	}
+
+	.entry__title {
+		max-width: var(--measure);
+		font-family: var(--font-display);
+		font-size: var(--text-2xl);
+		font-weight: 600;
+	}
+
+	/* The lead sits directly above the body here, so it takes the body's measure
+	   rather than the narrower lead one: a 46ch lead over a 65ch body reads as a
+	   ragged column that changes its mind. */
+	.entry__lead {
+		max-width: var(--measure);
+		margin-block-start: var(--space-sm);
+		color: var(--color-ink-muted);
+		font-size: var(--text-lg);
+		line-height: var(--leading-snug);
+	}
+
+	/* The body is the smaller voice under the lead, so it drops back to base
+	   size rather than the `.prose` default. */
+	.entry__body {
+		margin-block-start: var(--space-lg);
+		font-size: var(--text-base);
 	}
 </style>

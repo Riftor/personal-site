@@ -4,6 +4,31 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+
+		<!--
+			The two faces every page paints text in, declared in `app.css`. They are
+			same-origin (`font-src 'self'`), but a font request only starts once the
+			stylesheet that names it has parsed — preloading overlaps that with the
+			CSS fetch and keeps the `font-display: swap` window short enough that
+			nothing visibly reflows. `crossorigin` is required even here: fonts are
+			fetched in CORS mode, and a preload without it is a second, wasted
+			request. The italic cut is deliberately absent — see `app.css`.
+		-->
+		<link
+			rel="preload"
+			href="/fonts/fraunces-latin-standard-normal.woff2"
+			as="font"
+			type="font/woff2"
+			crossorigin
+		/>
+		<link
+			rel="preload"
+			href="/fonts/inter-latin-wght-normal.woff2"
+			as="font"
+			type="font/woff2"
+			crossorigin
+		/>
+
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

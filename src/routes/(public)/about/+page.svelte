@@ -32,6 +32,7 @@
 	}
 
 	.lede__summary {
+		max-width: var(--measure-lead);
 		margin-block-start: var(--space-sm);
 		color: var(--color-ink-muted);
 		font-size: var(--text-lg);

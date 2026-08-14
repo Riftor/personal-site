@@ -10,34 +10,55 @@ import { expect, test } from '@playwright/test';
  * explicitly rather than inferred.
  */
 
-const PUBLIC_PAGES = [
-	{ path: '/', heading: 'One line that says what you do' },
-	{ path: '/about', heading: 'About' },
-	{ path: '/work', heading: 'Work' }
-];
+/**
+ * These assert the *shape* of each page, never its words. The copy lives in D1
+ * and is rewritten by `pnpm run publish` without a deploy, so a test that
+ * pinned the headline would fail every time Caden edited a sentence — and the
+ * failure would say nothing about whether the page still works.
+ */
+const PUBLIC_PAGES = [{ path: '/' }, { path: '/about' }, { path: '/work' }];
 
-for (const { path, heading } of PUBLIC_PAGES) {
+for (const { path } of PUBLIC_PAGES) {
 	test(`${path} is readable signed out, with no redirect`, async ({ page, baseURL }) => {
 		const response = await page.goto(path);
 
 		expect(response?.status()).toBe(200);
 		expect(page.url()).toBe(new URL(path, baseURL).toString());
-		await expect(page.locator('h1')).toContainText(heading);
+		await expect(page.locator('h1')).not.toBeEmpty();
 	});
 }
 
-test('the home page renders seeded projects and links to the rest', async ({ page }) => {
+/**
+ * The seed rows in `drizzle/0001_content_entry.sql` mark every string
+ * `[PLACEHOLDER]` so that unwritten copy cannot be mistaken for real
+ * biography. This is the check that the site is not still serving them.
+ */
+for (const { path } of PUBLIC_PAGES) {
+	test(`${path} serves no placeholder copy`, async ({ page }) => {
+		await page.goto(path);
+
+		await expect(page.locator('body')).not.toContainText('[PLACEHOLDER]');
+	});
+}
+
+test('the home page previews projects and links to the rest', async ({ page }) => {
 	await page.goto('/');
 
 	await expect(page.getByRole('heading', { name: 'Selected work' })).toBeVisible();
-	await expect(page.getByRole('heading', { level: 3 })).toHaveCount(3);
+	// At least one, and never more than the FEATURED_COUNT the loader asks for.
+	const featured = page.getByRole('heading', { level: 3 });
+	expect(await featured.count()).toBeGreaterThan(0);
+	expect(await featured.count()).toBeLessThanOrEqual(3);
 	await expect(page.getByRole('link', { name: 'All work' })).toBeVisible();
 });
 
-test('/work lists every seeded project', async ({ page }) => {
+test('/work lists every published project, with its body', async ({ page }) => {
 	await page.goto('/work');
 
-	await expect(page.getByRole('heading', { level: 3 })).toHaveCount(4);
+	expect(await page.getByRole('heading', { level: 3 }).count()).toBeGreaterThan(0);
+	// The body is the point of this page — a project rendered as a bare card
+	// with its prose dropped would still pass a count-only assertion.
+	await expect(page.locator('.entry .prose p').first()).not.toBeEmpty();
 });
 
 test('/about renders the prose body from D1', async ({ page }) => {

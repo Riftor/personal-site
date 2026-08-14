@@ -9,14 +9,61 @@
  * never matches.
  */
 
-@layer reset, tokens, base, layout, components;
+@layer reset, tokens, fonts, base, layout, components;
+
+/*
+ * Self-hosted typefaces. No CDN: `font-src` is `'self'` and stays that way, so
+ * the files are copied out of the `@fontsource-variable/*` packages into
+ * `static/fonts/` at install time and served from our own origin. The packages
+ * are devDependencies and their CSS is deliberately not imported — it declares
+ * every subset, and only latin ships here.
+ *
+ * Both are variable across `100 900`, so one file covers every weight the site
+ * uses. Fraunces also carries an optical-size axis, which the browser drives
+ * from `font-size` on its own; that is the whole reason the `standard` cut is
+ * shipped over the smaller weight-only one, since this face is only ever used
+ * large. `swap` over `block`: with both files preloaded in `app.html` the swap
+ * window is small, and text a visitor can read beats text they cannot.
+ */
+@layer fonts {
+	@font-face {
+		font-family: 'Fraunces Variable';
+		font-style: normal;
+		font-weight: 100 900;
+		font-display: swap;
+		src: url('/fonts/fraunces-latin-standard-normal.woff2') format('woff2-variations');
+	}
+
+	@font-face {
+		font-family: 'Inter Variable';
+		font-style: normal;
+		font-weight: 100 900;
+		font-display: swap;
+		src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+	}
+
+	/* Not preloaded: prose emphasis is the only thing that asks for it, and a
+	   synthesised oblique is a poor substitute when it does. */
+	@font-face {
+		font-family: 'Inter Variable';
+		font-style: italic;
+		font-weight: 100 900;
+		font-display: swap;
+		src: url('/fonts/inter-latin-wght-italic.woff2') format('woff2-variations');
+	}
+}
 
 @layer tokens {
 	:root {
-		/* ---- Typeface. No CDN fonts: the repo has no external-asset budget. ---- */
+		/* ---- Typeface. The fallbacks are the nearest widely-installed metric
+		       match for each face, so the swap moves the text as little as it
+		       can: a transitional serif behind Fraunces, the system UI stack
+		       behind Inter. ---- */
+		--font-display:
+			'Fraunces Variable', 'Iowan Old Style', Charter, Georgia, 'Times New Roman', serif;
 		--font-sans:
-			ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-			sans-serif;
+			'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+			'Helvetica Neue', Arial, sans-serif;
 		--font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
 		/* ---- Type scale. Fluid between a 320px and a 1240px viewport, ratio
@@ -29,11 +76,16 @@
 		--text-2xl: clamp(1.42rem, 1.29rem + 0.66vw, 1.86rem);
 		--text-3xl: clamp(1.6rem, 1.4rem + 0.98vw, 2.22rem);
 		--text-4xl: clamp(1.8rem, 1.51rem + 1.44vw, 2.65rem);
+		/* Display step. Only the page-opening h1 uses this; it is the one place
+		   with the room to let Fraunces be a display face rather than a heading. */
+		--text-5xl: clamp(2.25rem, 1.7rem + 2.75vw, 3.75rem);
 
+		--leading-display: 1.02;
 		--leading-tight: 1.15;
 		--leading-snug: 1.35;
 		--leading-normal: 1.65;
 
+		--tracking-tighter: -0.03em;
 		--tracking-tight: -0.015em;
 		--tracking-wide: 0.08em;
 
@@ -49,6 +101,9 @@
 
 		/* ---- Measure and page widths ---- */
 		--measure: 65ch;
+		/* Lead paragraphs run a step larger than body copy, so they need a
+		   narrower column to land on the same comfortable line length. */
+		--measure-lead: 46ch;
 		--width-page: 64rem;
 		--gutter: clamp(1.25rem, 4vw, 3rem);
 
@@ -170,6 +225,15 @@
 		text-wrap: balance;
 	}
 
+	/* The two levels that open a page or a section carry the display face; h3
+	   and below stay in the body face, which keeps the serif meaningful instead
+	   of decorative and reads better at UI sizes. */
+	h1,
+	h2 {
+		font-family: var(--font-display);
+		font-weight: 600;
+	}
+
 	h1 {
 		font-size: var(--text-4xl);
 	}
@@ -261,12 +325,25 @@
 		margin-block-start: var(--space-md);
 	}
 
+	/* A heading opens a new thought, so it takes more air above it than the
+	   paragraphs it separates — and the paragraph it introduces takes less,
+	   which binds the two together. */
 	.prose > * + :is(h2, h3) {
 		margin-block-start: var(--space-xl);
 	}
 
+	.prose :is(h2, h3) + * {
+		margin-block-start: var(--space-sm);
+	}
+
 	.prose :is(h2, h3) {
 		color: var(--color-ink);
+	}
+
+	/* Sub-headings sit a step below the section headings above them rather than
+	   matching the body copy, which at `--text-lg` they otherwise would. */
+	.prose h3 {
+		font-size: var(--text-base);
 	}
 
 	.prose :is(ul, ol) {
@@ -277,8 +354,36 @@
 		margin-block-start: var(--space-2xs);
 	}
 
+	/* The one flash of accent in long-form copy. Numbers stay neutral and
+	   tabular so a long ordered list keeps its left edge. */
+	.prose ul li::marker {
+		color: var(--color-accent);
+	}
+
+	.prose ol li::marker {
+		color: var(--color-ink-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.prose blockquote {
+		padding-inline-start: var(--space-md);
+		border-inline-start: 2px solid var(--color-accent);
+		color: var(--color-ink);
+		font-family: var(--font-display);
+		line-height: var(--leading-snug);
+	}
+
 	.prose strong {
 		color: var(--color-ink);
+		font-weight: 620;
+	}
+
+	.prose a {
+		text-decoration-color: var(--color-line-strong);
+	}
+
+	.prose a:hover {
+		text-decoration-color: currentcolor;
 	}
 
 	/* Small uppercase label used above section headings. */

@@ -57,10 +57,36 @@
 		padding-block: var(--space-xl) 0;
 	}
 
+	/* A short accent rule instead of a wash: it marks the top of the page in the
+	   site's one colour without putting a tint behind the headline. */
+	.hero::before {
+		content: '';
+		display: block;
+		width: 2.5rem;
+		height: 2px;
+		margin-block-end: var(--space-lg);
+		background-color: var(--color-accent);
+	}
+
+	/* The one place the display face gets to be a display face. */
+	.hero h1 {
+		font-size: var(--text-5xl);
+		line-height: var(--leading-display);
+		letter-spacing: var(--tracking-tighter);
+	}
+
 	.hero__lead {
-		margin-block-start: var(--space-md);
+		max-width: var(--measure-lead);
+		margin-block-start: var(--space-lg);
 		color: var(--color-ink-muted);
 		font-size: var(--text-lg);
+		line-height: var(--leading-snug);
+	}
+
+	/* The lead and the intro paragraph are one thought in two parts. The page's
+	   default section gap makes them read as two unrelated blocks. */
+	.hero + .prose {
+		margin-block-start: var(--space-xl);
 	}
 
 	.section-head {
@@ -74,10 +100,27 @@
 		border-block-end: 1px solid var(--color-line);
 	}
 
+	/* Flex rather than a grid, because the count here is whatever is featured —
+	   often one. An auto-fit grid gives a lone card either a stranded third of
+	   the row or the full 64rem, and both read as a layout with a hole in it.
+	   Wrapping flex items that grow from 17rem but stop at 26rem fill the row
+	   when there are three and make a deliberate single card when there is one. */
 	.card-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-md);
 		margin: 0;
+	}
+
+	.card-grid > li {
+		flex: 1 1 17rem;
+		max-width: 26rem;
+	}
+
+	/* A lone card capped at 26rem sits stranded under a section rule that spans
+	   the full width. Letting it fill the row instead makes it read as a feature
+	   rather than as the first of a set that never arrived. */
+	.card-grid > li:only-child {
+		max-width: none;
 	}
 </style>

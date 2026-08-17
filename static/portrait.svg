@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" role="img" aria-label="Placeholder portrait">
+  <!--
+    Stand-in portrait until a real photograph replaces it. The home page points
+    at /portrait.svg; drop a real image in `static/` and update the one <img>
+    in src/routes/(public)/+page.svelte. The styles below follow the viewer's
+    colour scheme so the placeholder sits quietly in both themes.
+  -->
+  <style>
+    .bg { fill: #eae6de; }
+    .frame { fill: none; stroke: #cdc8bd; stroke-width: 2; }
+    .figure { fill: #b7b1a4; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #1f211f; }
+      .frame { stroke: #3f423f; }
+      .figure { fill: #4a4d49; }
+    }
+  </style>
+  <rect class="bg" width="800" height="1000" />
+  <rect class="frame" x="24" y="24" width="752" height="952" rx="8" />
+  <!-- head -->
+  <circle class="figure" cx="400" cy="420" r="150" />
+  <!-- shoulders -->
+  <path class="figure" d="M 140 1000 C 140 780 250 660 400 660 C 550 660 660 780 660 1000 Z" />
+</svg>

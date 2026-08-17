@@ -234,7 +234,9 @@ test('the public page hydrates under the CSP with nothing refused', async ({ pag
 	// Client-side navigation only happens if the bootstrap script ran, so a
 	// blocked `script-src` shows up here as a full page load that never
 	// resolves the router — and as a violation in the list below.
-	await page.getByRole('link', { name: 'About' }).click();
+	// Scoped to the nav: page copy is free to link to /about too, and an
+	// unscoped locator would go ambiguous the day it does.
+	await page.getByLabel('Primary').getByRole('link', { name: 'About' }).click();
 	await expect(page).toHaveURL(/\/about$/);
 	await expect(page.locator('h1')).toContainText('About');
 

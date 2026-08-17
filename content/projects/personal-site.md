@@ -4,7 +4,6 @@ kind: project
 min_tier: public
 status: published
 occurred_on: 2026-08-14
-sort_key: '100'
 summary: A personal site with two halves — a public portfolio, and a private one where every visitor sees exactly the slice I gave them and nothing beyond it.
 ---
 

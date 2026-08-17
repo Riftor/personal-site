@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-	<title>Caden</title>
+	<title>{data.page.title}</title>
 	{#if data.page.summary}
 		<meta name="description" content={data.page.summary} />
 	{/if}
@@ -15,10 +15,17 @@
 
 <div class="stack-page">
 	<section class="hero">
-		<h1>{data.page.title}</h1>
-		{#if data.page.summary}
-			<p class="hero__lead">{data.page.summary}</p>
-		{/if}
+		<div class="hero__text">
+			<h1>{data.page.title}</h1>
+			{#if data.page.summary}
+				<p class="hero__lead">{data.page.summary}</p>
+			{/if}
+		</div>
+		<!-- A stand-in until there is a real photograph: drop one into `static/`
+		     and change this src. Width/height are the SVG's own 4:5 box, so the
+		     layout doesn't shift when a real file with other dimensions lands —
+		     `object-fit: cover` crops it to the same frame instead. -->
+		<img class="hero__portrait" src="/portrait.svg" alt="Caden Edam" width="800" height="1000" />
 	</section>
 
 	{#if data.page.bodyHtml}
@@ -52,14 +59,33 @@
 </div>
 
 <style>
+	/* Name on the left, portrait on the right; the portrait drops below the
+	   text when the row runs out of room rather than squeezing either. */
 	.hero {
-		max-width: var(--measure);
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-xl) var(--space-2xl);
+		align-items: flex-start;
 		padding-block: var(--space-xl) 0;
+	}
+
+	.hero__text {
+		flex: 1 1 24rem;
+		max-width: var(--measure);
+	}
+
+	.hero__portrait {
+		flex: 0 1 auto;
+		width: clamp(11rem, 26vw, 16rem);
+		aspect-ratio: 4 / 5;
+		object-fit: cover;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-line);
 	}
 
 	/* A short accent rule instead of a wash: it marks the top of the page in the
 	   site's one colour without putting a tint behind the headline. */
-	.hero::before {
+	.hero__text::before {
 		content: '';
 		display: block;
 		width: 2.5rem;

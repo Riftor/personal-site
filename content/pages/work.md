@@ -3,8 +3,8 @@ title: Work
 kind: page
 min_tier: public
 status: published
-summary: The things that got far enough to be worth describing.
+summary: Internships, research, and projects — what I did and what came of it.
 ---
 
-Most of what I make never lands on this page, which is fine — it wasn't for anybody else.
-What follows is the short list.
+A mix of paid work, research, and things I built because nobody was going to build them
+for me. Newest first.
